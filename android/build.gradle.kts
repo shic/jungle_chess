@@ -1,3 +1,5 @@
+// Shared Gradle repository and build-directory settings for Android modules.
+
 allprojects {
     repositories {
         google()

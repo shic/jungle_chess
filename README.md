@@ -1,6 +1,8 @@
-# jungle_chess
+<!-- Project overview for the Flutter Animal Kings app. -->
 
-A new Flutter project.
+# Animal Kings
+
+Animal Kings is a fast local animal strategy board game built with Flutter.
 
 ## Getting Started
 

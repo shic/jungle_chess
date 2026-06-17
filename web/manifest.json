@@ -1,11 +1,11 @@
 {
-    "name": "jungle_chess",
-    "short_name": "jungle_chess",
+    "name": "Animal Kings",
+    "short_name": "Animal Kings",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Fast animal chess strategy with hidden pieces, captures, and quick local matches.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -1,3 +1,5 @@
+// Warning policy applied to the macOS Runner target.
+
 WARNING_CFLAGS = -Wall -Wconditional-uninitialized -Wnullable-to-nonnull-conversion -Wmissing-method-return-type -Woverlength-strings
 GCC_WARN_UNDECLARED_SELECTOR = YES
 CLANG_UNDEFINED_BEHAVIOR_SANITIZER_NULLABILITY = YES

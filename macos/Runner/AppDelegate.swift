@@ -1,3 +1,5 @@
+// macOS application delegate for the Flutter runner lifecycle.
+
 import Cocoa
 import FlutterMacOS
 

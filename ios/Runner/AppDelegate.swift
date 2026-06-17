@@ -1,3 +1,5 @@
+// iOS application delegate for registering Flutter plugins.
+
 import Flutter
 import UIKit
 

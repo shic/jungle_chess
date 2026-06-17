@@ -1,3 +1,5 @@
+// Creates the main macOS window and attaches the Flutter view controller.
+
 import Cocoa
 import FlutterMacOS
 

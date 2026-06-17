@@ -1,116 +1,204 @@
+// Flutter UI and interaction flow for Animal Kings.
+
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:jungle_chess/game_audio_service.dart';
+import 'package:jungle_chess/jungle_localizations.dart';
+import 'package:jungle_chess/game_rules.dart';
+import 'package:jungle_chess/reset_interstitial_ad_service.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  unawaited(ResetInterstitialAdService.instance.initialize());
   runApp(const JungleChessApp());
 }
 
-class JungleChessApp extends StatelessWidget {
-  const JungleChessApp({super.key});
+class JungleChessApp extends StatefulWidget {
+  const JungleChessApp({
+    super.key,
+    this.initialLanguageCode = defaultLanguageCode,
+  });
+
+  final String initialLanguageCode;
+
+  @override
+  State<JungleChessApp> createState() => _JungleChessAppState();
+}
+
+class _JungleChessAppState extends State<JungleChessApp> {
+  late String _languageCode;
+
+  @override
+  void initState() {
+    super.initState();
+    _languageCode = AppLanguage.normalize(widget.initialLanguageCode);
+  }
+
+  void _setLanguage(String languageCode) {
+    setState(() {
+      _languageCode = AppLanguage.normalize(languageCode);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final strings = JungleStrings.forCode(_languageCode);
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: '斗兽棋',
+      title: strings.appTitle,
+      locale: strings.locale,
+      supportedLocales: AppLanguage.supportedLocales,
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFB3541E),
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFB3541E)),
         scaffoldBackgroundColor: const Color(0xFFF6F0E3),
         useMaterial3: true,
       ),
-      home: const JungleChessPage(),
+      home: JungleChessPage(
+        languageCode: _languageCode,
+        onLanguageChanged: _setLanguage,
+      ),
     );
   }
 }
 
-enum PieceSide { red, blue }
+enum _MoveDirection { up, down, left, right }
 
-class GamePiece {
-  const GamePiece({
-    required this.side,
-    required this.rank,
-    this.revealed = false,
+const double _boardGap = 10;
+
+class _GameSnapshot {
+  const _GameSnapshot({
+    required this.board,
+    required this.currentTurn,
+    required this.statusMessage,
+    required this.winner,
+    required this.isDraw,
+    required this.turnsWithoutCapture,
   });
 
-  final PieceSide side;
-  final int rank;
-  final bool revealed;
-
-  GamePiece copyWith({
-    PieceSide? side,
-    int? rank,
-    bool? revealed,
-  }) {
-    return GamePiece(
-      side: side ?? this.side,
-      rank: rank ?? this.rank,
-      revealed: revealed ?? this.revealed,
-    );
-  }
+  final GameBoard board;
+  final PieceSide currentTurn;
+  final _StatusMessage statusMessage;
+  final PieceSide? winner;
+  final bool isDraw;
+  final int turnsWithoutCapture;
 }
 
-class BoardPosition {
-  const BoardPosition(this.row, this.col);
+class _StatusMessage {
+  const _StatusMessage(this._builder);
 
-  final int row;
-  final int col;
+  final String Function(JungleStrings strings) _builder;
 
-  bool isAdjacentTo(BoardPosition other) {
-    final rowDistance = (row - other.row).abs();
-    final colDistance = (col - other.col).abs();
-    return rowDistance + colDistance == 1;
+  String resolve(JungleStrings strings) => _builder(strings);
+}
+
+String _emptyStatusMessage(JungleStrings strings) => '';
+
+extension _MoveDirectionDetails on _MoveDirection {
+  int get rowDelta {
+    return switch (this) {
+      _MoveDirection.up => -1,
+      _MoveDirection.down => 1,
+      _MoveDirection.left || _MoveDirection.right => 0,
+    };
   }
 
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) {
-      return true;
-    }
-    return other is BoardPosition && other.row == row && other.col == col;
+  int get colDelta {
+    return switch (this) {
+      _MoveDirection.left => -1,
+      _MoveDirection.right => 1,
+      _MoveDirection.up || _MoveDirection.down => 0,
+    };
   }
 
-  @override
-  int get hashCode => Object.hash(row, col);
+  double get radians {
+    return switch (this) {
+      _MoveDirection.up => -pi / 2,
+      _MoveDirection.down => pi / 2,
+      _MoveDirection.left => pi,
+      _MoveDirection.right => 0,
+    };
+  }
+
+  Offset entryOffset(double distance) {
+    return switch (this) {
+      _MoveDirection.up => Offset(0, distance),
+      _MoveDirection.down => Offset(0, -distance),
+      _MoveDirection.left => Offset(distance, 0),
+      _MoveDirection.right => Offset(-distance, 0),
+    };
+  }
 }
 
 class JungleChessPage extends StatefulWidget {
-  const JungleChessPage({super.key});
+  const JungleChessPage({
+    super.key,
+    this.initialBoard,
+    this.initialTurn = PieceSide.red,
+    this.languageCode = defaultLanguageCode,
+    this.onLanguageChanged,
+  });
+
+  final GameBoard? initialBoard;
+  final PieceSide initialTurn;
+  final String languageCode;
+  final ValueChanged<String>? onLanguageChanged;
 
   @override
   State<JungleChessPage> createState() => _JungleChessPageState();
 }
 
 class _JungleChessPageState extends State<JungleChessPage> {
-  static const int boardSize = 4;
-  static const Map<int, String> animalNames = <int, String>{
-    1: '鼠',
-    2: '猫',
-    3: '狗',
-    4: '狼',
-    5: '豹',
-    6: '虎',
-    7: '狮',
-    8: '象',
-  };
+  static const int boardSize = JungleGameRules.boardSize;
 
   final Random _random = Random();
+  final List<_GameSnapshot> _moveHistory = <_GameSnapshot>[];
   late List<List<GamePiece?>> _board;
   PieceSide _currentTurn = PieceSide.red;
   BoardPosition? _selected;
-  String _statusMessage = '';
+  _StatusMessage _statusMessage = const _StatusMessage(_emptyStatusMessage);
   PieceSide? _winner;
   bool _isDraw = false;
+  bool _soundEnabled = true;
+  bool _undoInProgress = false;
+  bool _showUndoAnimation = false;
+  int _turnsWithoutCapture = 0;
+
+  JungleStrings get _strings => JungleStrings.forCode(widget.languageCode);
 
   @override
   void initState() {
     super.initState();
+    GameAudioService.instance.enabled = _soundEnabled;
     _resetGame();
   }
 
   void _resetGame() {
+    final initialBoard = widget.initialBoard;
+    if (initialBoard != null) {
+      _board = _copyBoard(initialBoard);
+      final initialTurn = widget.initialTurn;
+      setState(() {
+        _moveHistory.clear();
+        _currentTurn = initialTurn;
+        _selected = null;
+        _winner = null;
+        _isDraw = false;
+        _undoInProgress = false;
+        _showUndoAnimation = false;
+        _turnsWithoutCapture = 0;
+        _statusMessage = _StatusMessage(
+          (strings) => strings.openingTurn(initialTurn),
+        );
+      });
+      return;
+    }
+
     final pieces = <GamePiece>[
       for (final side in PieceSide.values)
         for (var rank = 1; rank <= 8; rank++) GamePiece(side: side, rank: rank),
@@ -125,35 +213,311 @@ class _JungleChessPageState extends State<JungleChessPage> {
     );
 
     setState(() {
+      _moveHistory.clear();
       _currentTurn = PieceSide.red;
       _selected = null;
       _winner = null;
       _isDraw = false;
-      _statusMessage = '红方先手：每回合可以翻一张牌，或者移动一枚自己的棋子。';
+      _undoInProgress = false;
+      _showUndoAnimation = false;
+      _turnsWithoutCapture = 0;
+      _statusMessage = _StatusMessage(
+        (strings) => strings.openingTurn(PieceSide.red),
+      );
     });
   }
 
-  void _onCellTapped(BoardPosition position) {
+  GameBoard _copyBoard(GameBoard board) {
+    return <List<GamePiece?>>[
+      for (final row in board) <GamePiece?>[...row],
+    ];
+  }
+
+  bool get _canUndo => _moveHistory.isNotEmpty;
+
+  Future<void> _onResetPressed() async {
     if (_winner != null || _isDraw) {
+      await _restartGameWithAd();
+      return;
+    }
+
+    await _confirmResetGame();
+  }
+
+  Future<void> _confirmResetGame() async {
+    final shouldReset = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final strings = _strings;
+        return AlertDialog(
+          title: Text(strings.resetTitle),
+          content: Text(strings.resetContent),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(strings.continueGame),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(strings.resetButton),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || shouldReset != true) {
+      return;
+    }
+    await _restartGameWithAd();
+  }
+
+  Future<void> _restartGameWithAd() async {
+    await ResetInterstitialAdService.instance.showBeforeReset();
+    if (!mounted) {
+      return;
+    }
+    _resetGame();
+  }
+
+  Future<void> _onUndoPressed() async {
+    if (!_canUndo || _undoInProgress) {
+      return;
+    }
+
+    await _confirmUndoMove();
+  }
+
+  Future<void> _confirmUndoMove() async {
+    final shouldUndo = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final strings = _strings;
+        return AlertDialog(
+          title: Text(strings.undoTitle),
+          content: Text(strings.undoContent),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(strings.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(strings.watchAdAndUndo),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || shouldUndo != true) {
+      return;
+    }
+    await _undoMoveWithAd();
+  }
+
+  Future<void> _undoMoveWithAd() async {
+    if (!_canUndo || _undoInProgress) {
+      return;
+    }
+
+    setState(() {
+      _undoInProgress = true;
+      _selected = null;
+      _statusMessage = _StatusMessage((strings) => strings.adThenUndo());
+    });
+
+    await ResetInterstitialAdService.instance.showBeforeAction();
+    if (!mounted) {
+      return;
+    }
+
+    await _playUndoAnimation();
+    if (!mounted) {
+      return;
+    }
+
+    _restorePreviousMove();
+  }
+
+  Future<void> _playUndoAnimation() async {
+    setState(() {
+      _showUndoAnimation = true;
+      _statusMessage = _StatusMessage((strings) => strings.undoingStatus());
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 850));
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _showUndoAnimation = false;
+    });
+  }
+
+  void _saveUndoSnapshot() {
+    _moveHistory.add(
+      _GameSnapshot(
+        board: _copyBoard(_board),
+        currentTurn: _currentTurn,
+        statusMessage: _statusMessage,
+        winner: _winner,
+        isDraw: _isDraw,
+        turnsWithoutCapture: _turnsWithoutCapture,
+      ),
+    );
+  }
+
+  void _restorePreviousMove() {
+    if (!_canUndo) {
+      setState(() {
+        _undoInProgress = false;
+        _showUndoAnimation = false;
+      });
+      return;
+    }
+
+    final snapshot = _moveHistory.removeLast();
+    setState(() {
+      _board = _copyBoard(snapshot.board);
+      _currentTurn = snapshot.currentTurn;
+      _selected = null;
+      _winner = snapshot.winner;
+      _isDraw = snapshot.isDraw;
+      _turnsWithoutCapture = snapshot.turnsWithoutCapture;
+      _undoInProgress = false;
+      _showUndoAnimation = false;
+      _statusMessage = _undoStatusMessage(snapshot);
+    });
+  }
+
+  _StatusMessage _undoStatusMessage(_GameSnapshot snapshot) {
+    final opening = _moveHistory.isEmpty;
+    if (snapshot.winner != null || snapshot.isDraw) {
+      return _StatusMessage((strings) {
+        return strings.undoRestored(
+          opening: opening,
+          next: snapshot.statusMessage.resolve(strings),
+        );
+      });
+    }
+
+    final turn = snapshot.currentTurn;
+    final turnsWithoutCapture = snapshot.turnsWithoutCapture;
+    return _StatusMessage((strings) {
+      return strings.undoRestored(
+        opening: opening,
+        next: strings.undoTurn(
+          turn,
+          turnsWithoutCapture,
+          JungleGameRules.nonCaptureDrawLimit,
+        ),
+      );
+    });
+  }
+
+  Future<void> _showSettings() async {
+    var selectedLanguageCode = widget.languageCode;
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final strings = JungleStrings.forCode(selectedLanguageCode);
+            return AlertDialog(
+              title: Text(strings.settingsTitle),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: Icon(
+                        _soundEnabled ? Icons.volume_up : Icons.volume_off,
+                      ),
+                      title: Text(strings.soundEffects),
+                      value: _soundEnabled,
+                      onChanged: (value) {
+                        setState(() {
+                          _soundEnabled = value;
+                          GameAudioService.instance.enabled = value;
+                        });
+                        setDialogState(() {});
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      key: const ValueKey<String>('language-dropdown'),
+                      initialValue: selectedLanguageCode,
+                      isExpanded: true,
+                      menuMaxHeight: 360,
+                      decoration: InputDecoration(
+                        labelText: strings.languageLabel,
+                        prefixIcon: const Icon(Icons.language),
+                        border: const OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final language in AppLanguage.supported)
+                          DropdownMenuItem<String>(
+                            value: language.code,
+                            child: Text(language.menuLabel),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) {
+                          return;
+                        }
+                        selectedLanguageCode = value;
+                        widget.onLanguageChanged?.call(value);
+                        setDialogState(() {});
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(strings.done),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _playSound(GameSoundEffect effect) {
+    GameAudioService.instance.play(effect);
+  }
+
+  void _onCellTapped(BoardPosition position) {
+    if (_undoInProgress || _winner != null || _isDraw) {
       return;
     }
 
     final piece = _board[position.row][position.col];
 
     if (_selected == position) {
+      _playSound(GameSoundEffect.tap);
       setState(() {
         _selected = null;
-        _statusMessage = '已取消选中，可以重新选择翻牌或走棋。';
+        _statusMessage = _StatusMessage(
+          (strings) => strings.selectionCanceled(),
+        );
       });
       return;
     }
 
-    if (piece != null &&
-        piece.revealed &&
-        piece.side == _currentTurn) {
+    if (piece != null && piece.revealed && piece.side == _currentTurn) {
+      final currentTurn = _currentTurn;
+      _playSound(GameSoundEffect.tap);
       setState(() {
         _selected = position;
-        _statusMessage = '${_sideLabel(_currentTurn)}方已选中 ${_pieceLabel(piece)}。';
+        _statusMessage = _StatusMessage(
+          (strings) => strings.selectedPiece(currentTurn, piece),
+        );
       });
       return;
     }
@@ -165,8 +529,11 @@ class _JungleChessPageState extends State<JungleChessPage> {
 
     final selected = _selected;
     if (selected == null) {
+      _playSound(GameSoundEffect.tap);
       setState(() {
-        _statusMessage = '请先翻一张暗棋，或者选中自己的棋子再走一步。';
+        _statusMessage = _StatusMessage(
+          (strings) => strings.choosePieceFirst(),
+        );
       });
       return;
     }
@@ -175,7 +542,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
     if (movingPiece == null) {
       setState(() {
         _selected = null;
-        _statusMessage = '选中的棋子不存在了，请重新操作。';
+        _statusMessage = _StatusMessage(
+          (strings) => strings.selectedPieceMissing(),
+        );
       });
       return;
     }
@@ -189,13 +558,17 @@ class _JungleChessPageState extends State<JungleChessPage> {
   }
 
   void _flipPiece(BoardPosition position, GamePiece piece) {
+    final actor = _currentTurn;
+    _playSound(GameSoundEffect.tap);
+    _saveUndoSnapshot();
     setState(() {
       _board[position.row][position.col] = piece.copyWith(revealed: true);
       _selected = null;
-      _statusMessage =
-          '${_sideLabel(_currentTurn)}方翻开了 ${_sideLabel(piece.side)}方 ${_pieceLabel(piece)}。';
+      _statusMessage = _StatusMessage(
+        (strings) => strings.flippedPiece(actor, piece.side, piece),
+      );
     });
-    _finishTurn();
+    _finishTurn(captured: false);
   }
 
   void _tryMoveOrCapture({
@@ -206,266 +579,221 @@ class _JungleChessPageState extends State<JungleChessPage> {
   }) {
     if (!from.isAdjacentTo(to)) {
       setState(() {
-        _statusMessage = '每次只能上下左右移动一步。';
+        _statusMessage = _StatusMessage((strings) => strings.oneStepOnly());
       });
       return;
     }
 
     if (defender == null) {
+      final actor = _currentTurn;
+      _playSound(GameSoundEffect.move);
+      _saveUndoSnapshot();
       setState(() {
         _board[to.row][to.col] = attacker;
         _board[from.row][from.col] = null;
         _selected = null;
-        _statusMessage =
-            '${_sideLabel(_currentTurn)}方把 ${_pieceLabel(attacker)} 移动到空位。';
+        _statusMessage = _StatusMessage(
+          (strings) => strings.movedToEmpty(actor, attacker),
+        );
       });
-      _finishTurn();
+      _finishTurn(captured: false);
       return;
     }
 
     if (!defender.revealed) {
       setState(() {
-        _statusMessage = '不能走到暗棋上，只能翻开它。';
+        _statusMessage = _StatusMessage(
+          (strings) => strings.cannotMoveToHidden(),
+        );
       });
       return;
     }
 
     if (defender.side == attacker.side) {
       setState(() {
-        _statusMessage = '不能吃自己的棋子。';
+        _statusMessage = _StatusMessage(
+          (strings) => strings.cannotCaptureOwn(),
+        );
       });
       return;
     }
 
     if (!_canCapture(attacker: attacker, defender: defender)) {
       setState(() {
-        _statusMessage =
-            '${_pieceLabel(attacker)} 不能吃掉 ${_pieceLabel(defender)}。';
+        _statusMessage = _StatusMessage(
+          (strings) => strings.cannotCapture(attacker, defender),
+        );
       });
       return;
     }
 
     final isMutualElimination = attacker.rank == defender.rank;
-    final specialWinner = _specialThreePieceWinner(
-      from: from,
-      to: to,
-      eliminatedRank: attacker.rank,
-      isMutualElimination: isMutualElimination,
-    );
-    final winnerMessage = specialWinner == null
-        ? null
-        : '${_sideLabel(specialWinner)}方获胜：场上只剩三枚棋子时，两枚大棋子同归于尽，最后剩下的是${_sideLabel(specialWinner)}方。';
-
+    final actor = _currentTurn;
+    final defenderSide = defender.side;
+    _playSound(GameSoundEffect.capture);
+    _saveUndoSnapshot();
+    final actionMessage = isMutualElimination
+        ? _StatusMessage(
+            (strings) => strings.mutualElimination(
+              actor: actor,
+              attacker: attacker,
+              defenderSide: defenderSide,
+              defender: defender,
+            ),
+          )
+        : _StatusMessage(
+            (strings) => strings.capturedPiece(
+              actor: actor,
+              attacker: attacker,
+              defenderSide: defenderSide,
+              defender: defender,
+            ),
+          );
     setState(() {
       _board[from.row][from.col] = null;
       _board[to.row][to.col] = isMutualElimination ? null : attacker;
       _selected = null;
-      _statusMessage =
-          isMutualElimination
-              ? '${_sideLabel(_currentTurn)}方的 ${_pieceLabel(attacker)} 与 ${_sideLabel(defender.side)}方的 ${_pieceLabel(defender)} 同归于尽。'
-              : '${_sideLabel(_currentTurn)}方用 ${_pieceLabel(attacker)} 吃掉了 ${_sideLabel(defender.side)}方 ${_pieceLabel(defender)}。';
+      _statusMessage = actionMessage;
     });
-    _finishTurn(
-      forcedWinner: specialWinner,
-      winnerMessage: winnerMessage,
-    );
+    _finishTurn(captured: true, actionMessage: actionMessage);
   }
 
-  bool _canCapture({
-    required GamePiece attacker,
-    required GamePiece defender,
+  bool _canCapture({required GamePiece attacker, required GamePiece defender}) {
+    return JungleGameRules.canCapture(attacker: attacker, defender: defender);
+  }
+
+  bool _isLegalMoveTarget({
+    required BoardPosition from,
+    required BoardPosition to,
   }) {
-    if (attacker.side == defender.side) {
+    final attacker = _board[from.row][from.col];
+    if (attacker == null ||
+        !attacker.revealed ||
+        attacker.side != _currentTurn ||
+        !from.isAdjacentTo(to)) {
       return false;
     }
-    if (attacker.rank == 1 && defender.rank == 8) {
+
+    final defender = _board[to.row][to.col];
+    if (defender == null) {
       return true;
     }
-    return attacker.rank >= defender.rank;
+    if (!defender.revealed || defender.side == attacker.side) {
+      return false;
+    }
+    return _canCapture(attacker: attacker, defender: defender);
   }
 
-  void _finishTurn({
-    PieceSide? forcedWinner,
-    String? winnerMessage,
-  }) {
-    final winner = forcedWinner ?? _checkWinner();
+  List<_MoveDirection> _availableMoveDirections(BoardPosition from) {
+    final directions = <_MoveDirection>[];
+    for (final direction in _MoveDirection.values) {
+      final to = BoardPosition(
+        from.row + direction.rowDelta,
+        from.col + direction.colDelta,
+      );
+      if (_isInsideBoard(to) && _isLegalMoveTarget(from: from, to: to)) {
+        directions.add(direction);
+      }
+    }
+    return directions;
+  }
+
+  bool _isInsideBoard(BoardPosition position) {
+    return position.row >= 0 &&
+        position.row < boardSize &&
+        position.col >= 0 &&
+        position.col < boardSize;
+  }
+
+  void _finishTurn({required bool captured, _StatusMessage? actionMessage}) {
+    final actor = _currentTurn;
+    final turnsWithoutCapture = captured ? 0 : _turnsWithoutCapture + 1;
+    final outcome = JungleGameRules.evaluateAfterTurn(
+      board: _board,
+      actor: actor,
+      consecutiveNonCaptureTurns: turnsWithoutCapture,
+    );
+
+    if (outcome.isDraw) {
+      setState(() {
+        _isDraw = true;
+        _turnsWithoutCapture = turnsWithoutCapture;
+        _selected = null;
+        _statusMessage = _drawMessage(outcome.reason);
+      });
+      return;
+    }
+
+    final winner = outcome.winner;
     if (winner != null) {
       setState(() {
         _winner = winner;
+        _turnsWithoutCapture = turnsWithoutCapture;
         _selected = null;
-        _statusMessage = winnerMessage ?? '${_sideLabel(winner)}方获胜，已吃光对手所有棋子。';
+        _statusMessage = _winnerMessage(winner, outcome.reason);
       });
       return;
     }
 
-    final nextTurn = _currentTurn == PieceSide.red ? PieceSide.blue : PieceSide.red;
-    final currentPlayerCanAct = _sideHasAction(_currentTurn);
-    final nextPlayerCanAct = _sideHasAction(nextTurn);
-
+    final nextTurn = JungleGameRules.opposite(actor);
     setState(() {
       _currentTurn = nextTurn;
+      _turnsWithoutCapture = turnsWithoutCapture;
+      _statusMessage = _ongoingTurnMessage(
+        nextTurn: _currentTurn,
+        turnsWithoutCapture: _turnsWithoutCapture,
+        actionMessage: actionMessage,
+        captureActor: captured ? actor : null,
+      );
     });
-
-    if (!nextPlayerCanAct && !currentPlayerCanAct) {
-      setState(() {
-        _isDraw = true;
-        _statusMessage = '双方都没有可执行的操作，平局。';
-      });
-      return;
-    }
-
-    if (!nextPlayerCanAct) {
-      setState(() {
-        _winner = _currentTurn == PieceSide.red ? PieceSide.blue : PieceSide.red;
-        _statusMessage =
-            '${_sideLabel(_winner!)}方获胜，对手已经没有可执行的操作。';
-      });
-      return;
-    }
-
-    setState(() {
-      _statusMessage = '轮到${_sideLabel(_currentTurn)}方：翻牌或走一步。';
-    });
-  }
-
-  PieceSide? _checkWinner() {
-    var redCount = 0;
-    var blueCount = 0;
-    for (final row in _board) {
-      for (final piece in row) {
-        if (piece == null) {
-          continue;
-        }
-        if (piece.side == PieceSide.red) {
-          redCount++;
-        } else {
-          blueCount++;
-        }
-      }
-    }
-
-    if (redCount == 0) {
-      return PieceSide.blue;
-    }
-    if (blueCount == 0) {
-      return PieceSide.red;
-    }
-    return null;
-  }
-
-  PieceSide? _specialThreePieceWinner({
-    required BoardPosition from,
-    required BoardPosition to,
-    required int eliminatedRank,
-    required bool isMutualElimination,
-  }) {
-    if (!isMutualElimination) {
-      return null;
-    }
-
-    final remainingPieces = <GamePiece>[];
-    for (var row = 0; row < boardSize; row++) {
-      for (var col = 0; col < boardSize; col++) {
-        final piece = _board[row][col];
-        if (piece == null) {
-          continue;
-        }
-        if ((row == from.row && col == from.col) ||
-            (row == to.row && col == to.col)) {
-          continue;
-        }
-        remainingPieces.add(piece);
-      }
-    }
-
-    if (remainingPieces.length != 1) {
-      return null;
-    }
-
-    final remainingPiece = remainingPieces.first;
-    if (remainingPiece.rank >= eliminatedRank) {
-      return null;
-    }
-
-    return remainingPiece.side;
-  }
-
-  bool _sideHasAction(PieceSide side) {
-    if (_hasHiddenPieces()) {
-      return true;
-    }
-
-    for (var row = 0; row < boardSize; row++) {
-      for (var col = 0; col < boardSize; col++) {
-        final piece = _board[row][col];
-        if (piece == null || !piece.revealed || piece.side != side) {
-          continue;
-        }
-
-        final from = BoardPosition(row, col);
-        for (final target in _adjacentPositions(from)) {
-          final other = _board[target.row][target.col];
-          if (other == null) {
-            return true;
-          }
-          if (other.revealed && _canCapture(attacker: piece, defender: other)) {
-            return true;
-          }
-        }
-      }
-    }
-
-    return false;
-  }
-
-  bool _hasHiddenPieces() {
-    for (final row in _board) {
-      for (final piece in row) {
-        if (piece != null && !piece.revealed) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  List<BoardPosition> _adjacentPositions(BoardPosition position) {
-    final candidates = <BoardPosition>[
-      BoardPosition(position.row - 1, position.col),
-      BoardPosition(position.row + 1, position.col),
-      BoardPosition(position.row, position.col - 1),
-      BoardPosition(position.row, position.col + 1),
-    ];
-
-    return candidates
-        .where(
-          (item) =>
-              item.row >= 0 &&
-              item.row < boardSize &&
-              item.col >= 0 &&
-              item.col < boardSize,
-        )
-        .toList();
   }
 
   int _remainingCount(PieceSide side) {
-    var count = 0;
-    for (final row in _board) {
-      for (final piece in row) {
-        if (piece?.side == side) {
-          count++;
-        }
-      }
+    return JungleGameRules.remainingCount(_board, side);
+  }
+
+  _StatusMessage _winnerMessage(PieceSide winner, GameEndReason? reason) {
+    return _StatusMessage((strings) => strings.winnerMessage(winner, reason));
+  }
+
+  _StatusMessage _drawMessage(GameEndReason? reason) {
+    return _StatusMessage(
+      (strings) =>
+          strings.drawMessage(reason, JungleGameRules.nonCaptureDrawLimit),
+    );
+  }
+
+  _StatusMessage _ongoingTurnMessage({
+    required PieceSide nextTurn,
+    required int turnsWithoutCapture,
+    _StatusMessage? actionMessage,
+    PieceSide? captureActor,
+  }) {
+    if (actionMessage == null || captureActor == null) {
+      return _StatusMessage(
+        (strings) => strings.turnMessage(
+          nextTurn,
+          turnsWithoutCapture,
+          JungleGameRules.nonCaptureDrawLimit,
+        ),
+      );
     }
-    return count;
-  }
 
-  String _sideLabel(PieceSide side) {
-    return side == PieceSide.red ? '红' : '蓝';
-  }
-
-  String _pieceLabel(GamePiece piece) {
-    return '${piece.rank}号${animalNames[piece.rank]}';
+    final opponent = JungleGameRules.opposite(captureActor);
+    final remaining = _remainingCount(opponent);
+    return _StatusMessage((strings) {
+      final turn = strings.turnMessage(
+        nextTurn,
+        turnsWithoutCapture,
+        JungleGameRules.nonCaptureDrawLimit,
+      );
+      return strings.remainingAfterCapture(
+        action: actionMessage.resolve(strings),
+        opponent: opponent,
+        remaining: remaining,
+        turn: turn,
+      );
+    });
   }
 
   bool _isHighlighted(BoardPosition position) {
@@ -477,31 +805,23 @@ class _JungleChessPageState extends State<JungleChessPage> {
       return true;
     }
 
-    final attacker = _board[selected.row][selected.col];
-    if (attacker == null) {
-      return false;
-    }
-
-    if (!selected.isAdjacentTo(position)) {
-      return false;
-    }
-
-    final defender = _board[position.row][position.col];
-    if (defender == null) {
-      return true;
-    }
-    if (!defender.revealed || defender.side == attacker.side) {
-      return false;
-    }
-    return _canCapture(attacker: attacker, defender: defender);
+    return _isLegalMoveTarget(from: selected, to: position);
   }
 
   @override
   Widget build(BuildContext context) {
+    final strings = _strings;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('斗兽棋'),
+        title: Text(strings.appTitle),
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: strings.settingsTooltip,
+            icon: const Icon(Icons.settings),
+            onPressed: _showSettings,
+          ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -514,9 +834,11 @@ class _JungleChessPageState extends State<JungleChessPage> {
                 children: [
                   _buildStatusCard(),
                   const SizedBox(height: 16),
-                  _buildBoard(),
+                  _buildBoard(strings),
+                  const SizedBox(height: 12),
+                  _buildSideCounters(),
                   const SizedBox(height: 16),
-                  _buildRulesCard(),
+                  _buildRulesCard(strings),
                 ],
               ),
             ),
@@ -527,9 +849,16 @@ class _JungleChessPageState extends State<JungleChessPage> {
   }
 
   Widget _buildStatusCard() {
+    final strings = _strings;
     final turnColor = _currentTurn == PieceSide.red
         ? const Color(0xFFC44536)
         : const Color(0xFF1E6FBA);
+    final statusLineHeight = MediaQuery.textScalerOf(context).scale(16) * 1.5;
+    final heading = _winner != null
+        ? strings.victoryHeading(_winner!)
+        : _isDraw
+        ? strings.drawHeading
+        : strings.currentTurn(_currentTurn);
 
     return Card(
       elevation: 1,
@@ -539,61 +868,51 @@ class _JungleChessPageState extends State<JungleChessPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: _winner != null || _isDraw ? Colors.grey : turnColor,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    _winner != null
-                        ? '${_sideLabel(_winner!)}方胜利'
-                        : _isDraw
-                            ? '平局'
-                            : '当前回合：${_sideLabel(_currentTurn)}方',
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
+                Row(
+                  children: [
+                    Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: _winner != null || _isDraw
+                            ? Colors.grey
+                            : turnColor,
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        heading,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                FilledButton(
-                  onPressed: _resetGame,
-                  child: const Text('重新开始'),
-                ),
+                const SizedBox(height: 14),
+                _buildStatusActions(strings),
               ],
             ),
             const SizedBox(height: 16),
-            Text(
-              _statusMessage,
-              style: const TextStyle(
-                fontSize: 16,
-                height: 1.5,
+            SizedBox(
+              height: statusLineHeight * 3,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Text(
+                  _statusMessage.resolve(strings),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 16, height: 1.5),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildSideCounter(
-                    side: PieceSide.red,
-                    count: _remainingCount(PieceSide.red),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildSideCounter(
-                    side: PieceSide.blue,
-                    count: _remainingCount(PieceSide.blue),
-                  ),
-                ),
-              ],
             ),
           ],
         ),
@@ -601,15 +920,63 @@ class _JungleChessPageState extends State<JungleChessPage> {
     );
   }
 
-  Widget _buildSideCounter({
-    required PieceSide side,
-    required int count,
-  }) {
+  Widget _buildStatusActions(JungleStrings strings) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Flexible(
+          child: Tooltip(
+            message: _canUndo ? strings.undoButton : strings.undoUnavailable,
+            child: OutlinedButton.icon(
+              key: const ValueKey<String>('undo-button'),
+              onPressed: _canUndo && !_undoInProgress ? _onUndoPressed : null,
+              icon: const Icon(Icons.undo),
+              label: Text(strings.undoButton, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: FilledButton.icon(
+            key: const ValueKey<String>('reset-button'),
+            onPressed: _undoInProgress ? null : _onResetPressed,
+            icon: const Icon(Icons.refresh),
+            label: Text(strings.resetButton, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSideCounters() {
+    return Row(
+      key: const ValueKey<String>('side-counters'),
+      children: [
+        Expanded(
+          child: _buildSideCounter(
+            side: PieceSide.red,
+            count: _remainingCount(PieceSide.red),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildSideCounter(
+            side: PieceSide.blue,
+            count: _remainingCount(PieceSide.blue),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSideCounter({required PieceSide side, required int count}) {
+    final strings = _strings;
     final color = side == PieceSide.red
         ? const Color(0xFFC44536)
         : const Color(0xFF1E6FBA);
 
     return Container(
+      key: ValueKey<String>('${side.name}-remaining-counter'),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
@@ -618,26 +985,20 @@ class _JungleChessPageState extends State<JungleChessPage> {
       child: Column(
         children: [
           Text(
-            '${_sideLabel(side)}方剩余',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
+            strings.sideRemaining(side),
+            style: TextStyle(color: color, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
-            '$count 枚',
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-            ),
+            strings.piecesCount(count),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBoard() {
+  Widget _buildBoard(JungleStrings strings) {
     return AspectRatio(
       aspectRatio: 1,
       child: Container(
@@ -657,56 +1018,169 @@ class _JungleChessPageState extends State<JungleChessPage> {
             ),
           ],
         ),
-        child: GridView.builder(
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: boardSize * boardSize,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: boardSize,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-          ),
-          itemBuilder: (context, index) {
-            final row = index ~/ boardSize;
-            final col = index % boardSize;
-            final position = BoardPosition(row, col);
-            final piece = _board[row][col];
-            return _BoardCell(
-              piece: piece,
-              highlighted: _isHighlighted(position),
-              onTap: () => _onCellTapped(position),
-            );
-          },
+        child: Stack(
+          children: [
+            GridView.builder(
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: boardSize * boardSize,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: boardSize,
+                crossAxisSpacing: _boardGap,
+                mainAxisSpacing: _boardGap,
+              ),
+              itemBuilder: (context, index) {
+                final row = index ~/ boardSize;
+                final col = index % boardSize;
+                final position = BoardPosition(row, col);
+                final piece = _board[row][col];
+                return _BoardCell(
+                  key: ValueKey<String>('board-cell-$row-$col'),
+                  piece: piece,
+                  strings: strings,
+                  highlighted: _isHighlighted(position),
+                  onTap: () => _onCellTapped(position),
+                );
+              },
+            ),
+            if (_selected != null)
+              _MoveArrowOverlay(
+                selected: _selected!,
+                directions: _availableMoveDirections(_selected!),
+              ),
+            if (_showUndoAnimation) _buildUndoAnimationOverlay(),
+            if (_winner != null || _isDraw) _buildGameOverOverlay(),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildRulesCard() {
+  Widget _buildUndoAnimationOverlay() {
+    final strings = _strings;
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Container(
+          key: const ValueKey<String>('undo-animation-overlay'),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.42),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Center(
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 720),
+              curve: Curves.easeOutBack,
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value.clamp(0, 1).toDouble(),
+                  child: Transform.rotate(
+                    angle: -pi * value,
+                    child: Transform.scale(
+                      scale: 0.72 + value * 0.28,
+                      child: child,
+                    ),
+                  ),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF6F0E3),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 16,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.undo, size: 30, color: Color(0xFFB3541E)),
+                    const SizedBox(width: 10),
+                    Text(
+                      strings.undoingLabel,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGameOverOverlay() {
+    final strings = _strings;
+    final label = _winner == null
+        ? strings.drawHeading
+        : strings.gameOverWinner(_winner!);
+    final accentColor = _winner == PieceSide.blue
+        ? const Color(0xFF76B7FF)
+        : const Color(0xFFFFA39A);
+
+    return Positioned.fill(
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(16),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: accentColor,
+                  fontSize: 42,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                strings.gameOverPrompt,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRulesCard(JungleStrings strings) {
+    final rules = strings.rules(JungleGameRules.nonCaptureDrawLimit);
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
+          children: [
             Text(
-              '规则说明',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              strings.rulesTitle,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
-            SizedBox(height: 12),
-            Text('1. 棋盘为 4 x 4，共 16 枚棋子，红蓝双方各有 1 到 8 号。'),
-            SizedBox(height: 6),
-            Text('2. 每回合只能二选一：翻开一张暗棋，或者移动一枚自己的明棋一步。'),
-            SizedBox(height: 6),
-            Text('3. 只能上下左右移动，不能斜走，也不能一次移动多格。'),
-            SizedBox(height: 6),
-            Text('4. 吃子时必须是对方明棋，且数字相同或更大；特殊规则是 1 号可以吃 8 号。'),
-            SizedBox(height: 6),
-            Text('5. 如果双方数字相同，互吃后两枚棋子都会消失。'),
-            SizedBox(height: 6),
-            Text('6. 如果场上只剩一枚小棋子和两枚相同的大棋子，大棋子同归于尽后，剩下那一方直接获胜。'),
-            SizedBox(height: 6),
-            Text('7. 被吃掉的位置会变成空格，后续可以移动进去。'),
+            const SizedBox(height: 12),
+            for (final rule in rules) ...[
+              Text(rule),
+              if (rule != rules.last) const SizedBox(height: 6),
+            ],
           ],
         ),
       ),
@@ -716,12 +1190,15 @@ class _JungleChessPageState extends State<JungleChessPage> {
 
 class _BoardCell extends StatelessWidget {
   const _BoardCell({
+    super.key,
     required this.piece,
+    required this.strings,
     required this.highlighted,
     required this.onTap,
   });
 
   final GamePiece? piece;
+  final JungleStrings strings;
   final bool highlighted;
   final VoidCallback onTap;
 
@@ -741,31 +1218,32 @@ class _BoardCell extends StatelessWidget {
           decoration: BoxDecoration(
             color: _backgroundColor(),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: borderColor, width: highlighted ? 3 : 1.5),
+            border: Border.all(
+              color: borderColor,
+              width: highlighted ? 3 : 1.5,
+            ),
           ),
-          child: piece == null
-              ? const Center(
-                  child: Text(
-                    '空',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white70,
-                    ),
-                  ),
-                )
-              : piece!.revealed
-                  ? _RevealedPiece(piece: piece!)
-                  : const Center(
-                      child: Text(
-                        '?',
-                        style: TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
+          child: _buildCellContent(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCellContent() {
+    final cellPiece = piece;
+    if (cellPiece == null) {
+      return const SizedBox.expand();
+    }
+    if (cellPiece.revealed) {
+      return _RevealedPiece(piece: cellPiece, strings: strings);
+    }
+    return const Center(
+      child: Text(
+        '?',
+        style: TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
         ),
       ),
     );
@@ -784,39 +1262,251 @@ class _BoardCell extends StatelessWidget {
   }
 }
 
-class _RevealedPiece extends StatelessWidget {
-  const _RevealedPiece({required this.piece});
+class _MoveArrowOverlay extends StatelessWidget {
+  const _MoveArrowOverlay({required this.selected, required this.directions});
 
-  final GamePiece piece;
+  final BoardPosition selected;
+  final List<_MoveDirection> directions;
 
   @override
   Widget build(BuildContext context) {
-    final animal = _JungleChessPageState.animalNames[piece.rank] ?? '';
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final boardSide = min(constraints.maxWidth, constraints.maxHeight);
+            final cellSize =
+                (boardSide - _boardGap * (JungleGameRules.boardSize - 1)) /
+                JungleGameRules.boardSize;
+            final step = cellSize + _boardGap;
+            final arrowSize = min(36.0, max(28.0, cellSize * 0.28));
+            final selectedCenter = Offset(
+              selected.col * step + cellSize / 2,
+              selected.row * step + cellSize / 2,
+            );
 
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                for (final direction in directions)
+                  _buildPositionedArrow(
+                    direction: direction,
+                    selectedCenter: selectedCenter,
+                    step: step,
+                    arrowSize: arrowSize,
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPositionedArrow({
+    required _MoveDirection direction,
+    required Offset selectedCenter,
+    required double step,
+    required double arrowSize,
+  }) {
+    final targetCenter = selectedCenter.translate(
+      direction.colDelta * step,
+      direction.rowDelta * step,
+    );
+    final arrowCenter = Offset.lerp(selectedCenter, targetCenter, 0.5)!;
+
+    return Positioned(
+      left: arrowCenter.dx - arrowSize / 2,
+      top: arrowCenter.dy - arrowSize / 2,
+      width: arrowSize,
+      height: arrowSize,
+      child: _FloatingMoveArrow(direction: direction),
+    );
+  }
+}
+
+class _FloatingMoveArrow extends StatelessWidget {
+  const _FloatingMoveArrow({required this.direction});
+
+  final _MoveDirection direction;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      key: ValueKey<String>('move-direction-arrow-${direction.name}'),
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: 0.72 * value,
+          child: Transform.translate(
+            offset: direction.entryOffset(6 * (1 - value)),
+            child: child,
+          ),
+        );
+      },
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          Text(
-            '${piece.rank}',
-            style: const TextStyle(
-              fontSize: 30,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-              height: 1,
+          Transform.translate(
+            offset: const Offset(0, 1.5),
+            child: CustomPaint(
+              painter: _MoveArrowPainter(
+                direction: direction,
+                color: Colors.black.withValues(alpha: 0.18),
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            animal,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
+          CustomPaint(
+            painter: _MoveArrowPainter(
+              direction: direction,
+              color: Colors.white.withValues(alpha: 0.9),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MoveArrowPainter extends CustomPainter {
+  const _MoveArrowPainter({required this.direction, required this.color});
+
+  final _MoveDirection direction;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(size.width * 0.12, size.height * 0.41)
+      ..lineTo(size.width * 0.58, size.height * 0.41)
+      ..lineTo(size.width * 0.58, size.height * 0.24)
+      ..lineTo(size.width * 0.9, size.height * 0.5)
+      ..lineTo(size.width * 0.58, size.height * 0.76)
+      ..lineTo(size.width * 0.58, size.height * 0.59)
+      ..lineTo(size.width * 0.12, size.height * 0.59)
+      ..close();
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    canvas
+      ..translate(size.width / 2, size.height / 2)
+      ..rotate(direction.radians)
+      ..translate(-size.width / 2, -size.height / 2)
+      ..drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MoveArrowPainter oldDelegate) {
+    return oldDelegate.direction != direction || oldDelegate.color != color;
+  }
+}
+
+class _RevealedPiece extends StatelessWidget {
+  const _RevealedPiece({required this.piece, required this.strings});
+
+  static const Map<int, String> animalAssets = <int, String>{
+    1: 'assets/images/animals/mouse.svg',
+    2: 'assets/images/animals/cat.svg',
+    3: 'assets/images/animals/dog.svg',
+    4: 'assets/images/animals/wolf.svg',
+    5: 'assets/images/animals/leopard.svg',
+    6: 'assets/images/animals/tiger.svg',
+    7: 'assets/images/animals/lion.svg',
+    8: 'assets/images/animals/elephant.svg',
+  };
+
+  static const Map<int, double> animalScaleFactors = <int, double>{
+    1: 0.66,
+    3: 0.64,
+    4: 0.68,
+    5: 0.7,
+    8: 0.66,
+  };
+
+  static const Map<int, Offset> animalCenterOffsets = <int, Offset>{
+    1: Offset(0, -0.03),
+    3: Offset(0, 0.05),
+    5: Offset(0.02, -0.1),
+    8: Offset(0.05, -0.02),
+  };
+
+  final GamePiece piece;
+  final JungleStrings strings;
+
+  @override
+  Widget build(BuildContext context) {
+    final animalAsset = animalAssets[piece.rank];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tileSize = min(constraints.maxWidth, constraints.maxHeight);
+        final edgeInset = tileSize * 0.1;
+        final badgeSize = tileSize * 0.62;
+        final animalSize = badgeSize * (animalScaleFactors[piece.rank] ?? 0.68);
+        final centerOffset = animalCenterOffsets[piece.rank] ?? Offset.zero;
+
+        return Stack(
+          children: [
+            Positioned(
+              left: edgeInset,
+              top: edgeInset * 0.75,
+              child: Text(
+                '${piece.rank}',
+                style: TextStyle(
+                  fontSize: tileSize * 0.35,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  height: 1,
+                ),
+              ),
+            ),
+            Positioned(
+              right: edgeInset * 0.55,
+              bottom: edgeInset * 0.5,
+              child: Semantics(
+                label: strings.animalName(piece.rank),
+                image: true,
+                child: Container(
+                  width: badgeSize,
+                  height: badgeSize,
+                  alignment: Alignment.center,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.88),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.16),
+                        blurRadius: tileSize * 0.08,
+                        offset: Offset(0, tileSize * 0.035),
+                      ),
+                    ],
+                  ),
+                  child: animalAsset == null
+                      ? const SizedBox.shrink()
+                      : Transform.translate(
+                          offset: Offset(
+                            centerOffset.dx * badgeSize,
+                            centerOffset.dy * badgeSize,
+                          ),
+                          child: SizedBox.square(
+                            dimension: animalSize,
+                            child: SvgPicture.asset(
+                              animalAsset,
+                              alignment: Alignment.center,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

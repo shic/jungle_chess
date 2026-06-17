@@ -1,5 +1,5 @@
 name: jungle_chess
-description: "A new Flutter project."
+description: "Animal Kings is a fast local animal strategy board game."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -30,10 +30,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  google_mobile_ads: ^9.0.0
+  audioplayers: ^6.7.1
+  flutter_svg: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +61,11 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/sounds/
+    - assets/images/
+    - assets/images/animals/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

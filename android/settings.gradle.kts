@@ -1,3 +1,5 @@
+// Wires Flutter's Gradle tooling into the Android project.
+
 pluginManagement {
     val flutterSdkPath =
         run {
