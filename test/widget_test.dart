@@ -5,9 +5,41 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jungle_chess/game_rules.dart';
 import 'package:jungle_chess/main.dart';
 
+const String _chineseLanguageCode = 'zh';
+
 void main() {
-  testWidgets('renders jungle chess game screen', (tester) async {
+  testWidgets('uses the supported device language on first launch', (
+    tester,
+  ) async {
+    tester.binding.platformDispatcher.localesTestValue = <Locale>[
+      const Locale('it', 'IT'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
     await tester.pumpWidget(const JungleChessApp());
+
+    expect(find.text('Ricomincia'), findsOneWidget);
+    expect(find.text('Regole'), findsOneWidget);
+  });
+
+  testWidgets('falls back to English for unsupported device languages', (
+    tester,
+  ) async {
+    tester.binding.platformDispatcher.localesTestValue = <Locale>[
+      const Locale('th', 'TH'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+    await tester.pumpWidget(const JungleChessApp());
+
+    expect(find.text('Restart'), findsOneWidget);
+    expect(find.text('Rules'), findsOneWidget);
+  });
+
+  testWidgets('renders jungle chess game screen', (tester) async {
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
 
     expect(find.text('Animal Kings'), findsOneWidget);
     expect(find.text('重新开始'), findsOneWidget);
@@ -22,7 +54,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(const JungleChessApp());
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
 
     final heading = find.text('当前回合：红方');
     expect(heading, findsOneWidget);
@@ -50,7 +84,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(const JungleChessApp());
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
 
     final boardBottom = tester
         .getBottomLeft(find.byKey(const ValueKey<String>('board-cell-3-0')))
@@ -71,7 +107,9 @@ void main() {
   });
 
   testWidgets('asks for confirmation before restarting', (tester) async {
-    await tester.pumpWidget(const JungleChessApp());
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
 
     await tester.tap(find.byKey(const ValueKey<String>('reset-button')));
     await tester.pumpAndSettle();
@@ -94,7 +132,9 @@ void main() {
   });
 
   testWidgets('opens settings and toggles sound effects', (tester) async {
-    await tester.pumpWidget(const JungleChessApp());
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
 
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
@@ -118,7 +158,9 @@ void main() {
   });
 
   testWidgets('changes interface language from settings', (tester) async {
-    await tester.pumpWidget(const JungleChessApp());
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
 
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
@@ -138,12 +180,59 @@ void main() {
     expect(find.text('Rules'), findsOneWidget);
   });
 
+  testWidgets('can return to the device language from settings', (
+    tester,
+  ) async {
+    tester.binding.platformDispatcher.localesTestValue = <Locale>[
+      const Locale('it', 'IT'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+    await tester.pumpWidget(const JungleChessApp());
+
+    expect(find.text('Ricomincia'), findsOneWidget);
+    expect(find.text('Regole'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Impostazioni'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('language-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('English').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Sound effects'), findsOneWidget);
+
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restart'), findsOneWidget);
+    expect(find.text('Rules'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('language-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Device language').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Impostazioni'), findsOneWidget);
+    expect(find.text('Effetti sonori'), findsOneWidget);
+
+    await tester.tap(find.text('Fine'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ricomincia'), findsOneWidget);
+    expect(find.text('Regole'), findsOneWidget);
+  });
+
   testWidgets(
     'asks for confirmation before undoing and reverts after animation',
     (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: JungleChessPage(
+            languageCode: _chineseLanguageCode,
             initialBoard: testBoard(
               red: const BoardPosition(0, 0),
               blue: const BoardPosition(0, 1),
@@ -201,6 +290,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: JungleChessPage(
+          languageCode: _chineseLanguageCode,
           initialBoard: testBoard(
             red: const BoardPosition(0, 0),
             blue: const BoardPosition(0, 1),
@@ -241,6 +331,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: JungleChessPage(
+          languageCode: _chineseLanguageCode,
           initialBoard: testBoard(
             red: const BoardPosition(0, 0),
             blue: const BoardPosition(0, 1),
@@ -309,6 +400,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: JungleChessPage(
+          languageCode: _chineseLanguageCode,
           initialBoard: testBoard(
             red: const BoardPosition(0, 0),
             blue: const BoardPosition(0, 1),
@@ -334,6 +426,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: JungleChessPage(
+          languageCode: _chineseLanguageCode,
           initialBoard: testBoard(
             red: const BoardPosition(0, 0),
             blue: const BoardPosition(0, 1),
@@ -363,6 +456,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: JungleChessPage(
+          languageCode: _chineseLanguageCode,
           initialBoard: testBoard(
             red: const BoardPosition(0, 0),
             blue: const BoardPosition(0, 1),

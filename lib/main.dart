@@ -18,29 +18,80 @@ void main() {
 }
 
 class JungleChessApp extends StatefulWidget {
-  const JungleChessApp({
-    super.key,
-    this.initialLanguageCode = defaultLanguageCode,
-  });
+  const JungleChessApp({super.key, this.initialLanguageCode});
 
-  final String initialLanguageCode;
+  final String? initialLanguageCode;
 
   @override
   State<JungleChessApp> createState() => _JungleChessAppState();
 }
 
-class _JungleChessAppState extends State<JungleChessApp> {
+class _JungleChessAppState extends State<JungleChessApp>
+    with WidgetsBindingObserver {
   late String _languageCode;
+  late bool _followsDeviceLanguage;
 
   @override
   void initState() {
     super.initState();
-    _languageCode = AppLanguage.normalize(widget.initialLanguageCode);
+    WidgetsBinding.instance.addObserver(this);
+    _followsDeviceLanguage = widget.initialLanguageCode == null;
+    _languageCode = _resolveInitialLanguageCode();
+  }
+
+  @override
+  void didUpdateWidget(covariant JungleChessApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialLanguageCode == oldWidget.initialLanguageCode) {
+      return;
+    }
+    _followsDeviceLanguage = widget.initialLanguageCode == null;
+    _languageCode = _resolveInitialLanguageCode();
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    if (!_followsDeviceLanguage) {
+      return;
+    }
+    final nextLanguageCode = AppLanguage.resolveLocales(locales);
+    if (nextLanguageCode == _languageCode) {
+      return;
+    }
+    setState(() {
+      _languageCode = nextLanguageCode;
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  String _resolveInitialLanguageCode() {
+    final initialLanguageCode = widget.initialLanguageCode;
+    if (initialLanguageCode != null) {
+      return AppLanguage.normalize(initialLanguageCode);
+    }
+    return AppLanguage.resolveLocales(
+      WidgetsBinding.instance.platformDispatcher.locales,
+    );
   }
 
   void _setLanguage(String languageCode) {
     setState(() {
+      _followsDeviceLanguage = false;
       _languageCode = AppLanguage.normalize(languageCode);
+    });
+  }
+
+  void _useDeviceLanguage() {
+    setState(() {
+      _followsDeviceLanguage = true;
+      _languageCode = AppLanguage.resolveLocales(
+        WidgetsBinding.instance.platformDispatcher.locales,
+      );
     });
   }
 
@@ -61,7 +112,9 @@ class _JungleChessAppState extends State<JungleChessApp> {
       ),
       home: JungleChessPage(
         languageCode: _languageCode,
+        followsDeviceLanguage: _followsDeviceLanguage,
         onLanguageChanged: _setLanguage,
+        onUseDeviceLanguage: _useDeviceLanguage,
       ),
     );
   }
@@ -70,6 +123,7 @@ class _JungleChessAppState extends State<JungleChessApp> {
 enum _MoveDirection { up, down, left, right }
 
 const double _boardGap = 10;
+const String _deviceLanguageDropdownValue = 'device-language';
 
 class _GameSnapshot {
   const _GameSnapshot({
@@ -141,13 +195,17 @@ class JungleChessPage extends StatefulWidget {
     this.initialBoard,
     this.initialTurn = PieceSide.red,
     this.languageCode = defaultLanguageCode,
+    this.followsDeviceLanguage = false,
     this.onLanguageChanged,
+    this.onUseDeviceLanguage,
   });
 
   final GameBoard? initialBoard;
   final PieceSide initialTurn;
   final String languageCode;
+  final bool followsDeviceLanguage;
   final ValueChanged<String>? onLanguageChanged;
+  final VoidCallback? onUseDeviceLanguage;
 
   @override
   State<JungleChessPage> createState() => _JungleChessPageState();
@@ -416,6 +474,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
   }
 
   Future<void> _showSettings() async {
+    var selectedDropdownValue = widget.followsDeviceLanguage
+        ? _deviceLanguageDropdownValue
+        : widget.languageCode;
     var selectedLanguageCode = widget.languageCode;
     await showDialog<void>(
       context: context,
@@ -448,7 +509,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       key: const ValueKey<String>('language-dropdown'),
-                      initialValue: selectedLanguageCode,
+                      initialValue: selectedDropdownValue,
                       isExpanded: true,
                       menuMaxHeight: 360,
                       decoration: InputDecoration(
@@ -457,6 +518,11 @@ class _JungleChessPageState extends State<JungleChessPage> {
                         border: const OutlineInputBorder(),
                       ),
                       items: [
+                        if (widget.onUseDeviceLanguage != null)
+                          DropdownMenuItem<String>(
+                            value: _deviceLanguageDropdownValue,
+                            child: Text(strings.deviceLanguageLabel),
+                          ),
                         for (final language in AppLanguage.supported)
                           DropdownMenuItem<String>(
                             value: language.code,
@@ -467,8 +533,16 @@ class _JungleChessPageState extends State<JungleChessPage> {
                         if (value == null) {
                           return;
                         }
-                        selectedLanguageCode = value;
-                        widget.onLanguageChanged?.call(value);
+                        selectedDropdownValue = value;
+                        if (value == _deviceLanguageDropdownValue) {
+                          selectedLanguageCode = AppLanguage.resolveLocales(
+                            WidgetsBinding.instance.platformDispatcher.locales,
+                          );
+                          widget.onUseDeviceLanguage?.call();
+                        } else {
+                          selectedLanguageCode = AppLanguage.normalize(value);
+                          widget.onLanguageChanged?.call(value);
+                        }
                         setDialogState(() {});
                       },
                     ),

@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:jungle_chess/game_rules.dart';
 
-const String defaultLanguageCode = 'zh';
+const String defaultLanguageCode = 'en';
 
 class AppLanguage {
   const AppLanguage({
@@ -69,10 +69,26 @@ class AppLanguage {
     return <Locale>[for (final language in supported) language.locale];
   }
 
+  static String resolveLocales(List<Locale>? locales) {
+    for (final locale in locales ?? const <Locale>[]) {
+      final languageCode = locale.languageCode.toLowerCase();
+      for (final language in supported) {
+        if (language.code == languageCode) {
+          return language.code;
+        }
+      }
+    }
+    return defaultLanguageCode;
+  }
+
   static AppLanguage byCode(String code) {
     return supported.firstWhere(
       (language) => language.code == code,
-      orElse: () => supported.first,
+      orElse: () {
+        return supported.firstWhere(
+          (language) => language.code == defaultLanguageCode,
+        );
+      },
     );
   }
 
@@ -106,6 +122,7 @@ class JungleStrings {
   String get settingsTitle => _lookup('settingsTitle');
   String get soundEffects => _lookup('soundEffects');
   String get languageLabel => _lookup('languageLabel');
+  String get deviceLanguageLabel => _lookup('deviceLanguageLabel');
   String get done => _lookup('done');
   String get resetButton => _lookup('resetButton');
   String get resetTitle => _lookup('resetTitle');
@@ -327,6 +344,7 @@ const Map<String, String> _englishStrings = <String, String>{
   'settingsTitle': 'Settings',
   'soundEffects': 'Sound effects',
   'languageLabel': 'Interface language',
+  'deviceLanguageLabel': 'Device language',
   'done': 'Done',
   'resetButton': 'Restart',
   'resetTitle': 'Restart?',
@@ -414,6 +432,7 @@ const Map<String, String> _chineseStrings = <String, String>{
   'settingsTitle': '设置',
   'soundEffects': '音效',
   'languageLabel': '界面语言',
+  'deviceLanguageLabel': '跟随设备语言',
   'done': '完成',
   'resetButton': '重新开始',
   'resetTitle': '重新开始？',
@@ -577,6 +596,7 @@ const Map<String, String> _italianStrings = <String, String>{
   'settingsTitle': 'Impostazioni',
   'soundEffects': 'Effetti sonori',
   'languageLabel': 'Lingua interfaccia',
+  'deviceLanguageLabel': 'Lingua del dispositivo',
   'done': 'Fine',
   'resetButton': 'Ricomincia',
   'resetTitle': 'Ricominciare?',
