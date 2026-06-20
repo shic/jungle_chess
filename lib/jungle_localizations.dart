@@ -132,15 +132,56 @@ class JungleStrings {
   String get undoUnavailable => _lookup('undoUnavailable');
   String get undoTitle => _lookup('undoTitle');
   String get undoContent => _lookup('undoContent');
+  String get undoContentComputer => _lookup('undoContentComputer');
   String get cancel => _lookup('cancel');
   String get watchAdAndUndo => _lookup('watchAdAndUndo');
   String get undoingLabel => _lookup('undoingLabel');
   String get rulesTitle => _lookup('rulesTitle');
   String get drawHeading => _lookup('drawHeading');
   String get gameOverPrompt => _lookup('gameOverPrompt');
+  String get gameModeLabel => _lookup('gameModeLabel');
+  String get aiDifficultyLabel => _lookup('aiDifficultyLabel');
+  String get modeChangeTitle => _lookup('modeChangeTitle');
+
+  String gameModeOption(String mode) => _lookup('gameMode.$mode');
+
+  String aiDifficultyOption(String difficulty) {
+    return _lookup('aiDifficulty.$difficulty');
+  }
+
+  String modeChangeContent(String mode) {
+    return _format(_lookup('modeChangeContent'), <String, String>{
+      'mode': mode,
+    });
+  }
 
   String sideLabel(PieceSide side) {
     return _lookup('side.${side.name}');
+  }
+
+  String _playerOneLabel() => _lookup('player.one');
+
+  String _playerTwoLabel() => _lookup('player.two');
+
+  String playerSideLabel(
+    PieceSide side,
+    PieceSide? playerOneSide, {
+    bool computerOpponent = false,
+  }) {
+    if (playerOneSide == null) {
+      return sideLabel(side);
+    }
+    final player = computerOpponent
+        ? side == playerOneSide
+              ? _lookup('player.you')
+              : _lookup('player.computer')
+        : side == playerOneSide
+        ? _playerOneLabel()
+        : _playerTwoLabel();
+    return _format(_lookup('playerSideLabel'), <String, String>{
+      'player': player,
+      'side': sideLabel(side),
+    });
   }
 
   String animalName(int rank) {
@@ -154,11 +195,9 @@ class JungleStrings {
     });
   }
 
-  String openingTurn(PieceSide side) {
-    return _format(_lookup('openingTurn'), <String, String>{
-      'side': sideLabel(side),
-    });
-  }
+  String get openingHeading => _lookup('openingHeading');
+
+  String openingTurn() => _lookup('openingTurn');
 
   String adThenUndo() => _lookup('adThenUndo');
 
@@ -171,9 +210,19 @@ class JungleStrings {
     );
   }
 
-  String undoTurn(PieceSide side, int turnsWithoutCapture, int limit) {
+  String undoTurn(
+    PieceSide side,
+    PieceSide? playerOneSide,
+    int turnsWithoutCapture,
+    int limit, {
+    bool computerOpponent = false,
+  }) {
     return _format(_lookup('undoTurn'), <String, String>{
-      'side': sideLabel(side),
+      'side': playerSideLabel(
+        side,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
       'count': '$turnsWithoutCapture',
       'limit': '$limit',
     });
@@ -181,9 +230,18 @@ class JungleStrings {
 
   String selectionCanceled() => _lookup('selectionCanceled');
 
-  String selectedPiece(PieceSide side, GamePiece piece) {
+  String selectedPiece(
+    PieceSide side,
+    PieceSide? playerOneSide,
+    GamePiece piece, {
+    bool computerOpponent = false,
+  }) {
     return _format(_lookup('selectedPiece'), <String, String>{
-      'side': sideLabel(side),
+      'side': playerSideLabel(
+        side,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
       'piece': pieceLabel(piece),
     });
   }
@@ -192,19 +250,84 @@ class JungleStrings {
 
   String selectedPieceMissing() => _lookup('selectedPieceMissing');
 
-  String flippedPiece(PieceSide actor, PieceSide pieceSide, GamePiece piece) {
+  String firstFlipAssignment(
+    PieceSide side,
+    GamePiece piece, {
+    bool computerOpponent = false,
+  }) {
+    return _format(
+      _lookup(
+        computerOpponent
+            ? 'firstFlipAssignmentComputer'
+            : 'firstFlipAssignment',
+      ),
+      <String, String>{
+        'side': sideLabel(side),
+        'opponentSide': sideLabel(JungleGameRules.opposite(side)),
+        'piece': pieceLabel(piece),
+      },
+    );
+  }
+
+  String firstFlipToastTitle() => _lookup('firstFlipToastTitle');
+
+  String firstFlipToastMessage(
+    PieceSide side, {
+    bool computerOpponent = false,
+  }) {
+    return _format(
+      _lookup(
+        computerOpponent
+            ? 'firstFlipToastMessageComputer'
+            : 'firstFlipToastMessage',
+      ),
+      <String, String>{
+        'side': sideLabel(side),
+        'nextPlayer': playerSideLabel(
+          JungleGameRules.opposite(side),
+          side,
+          computerOpponent: computerOpponent,
+        ),
+      },
+    );
+  }
+
+  String flippedPiece(
+    PieceSide actor,
+    PieceSide? playerOneSide,
+    PieceSide pieceSide,
+    GamePiece piece, {
+    bool computerOpponent = false,
+  }) {
     return _format(_lookup('flippedPiece'), <String, String>{
-      'actor': sideLabel(actor),
-      'side': sideLabel(pieceSide),
+      'actor': playerSideLabel(
+        actor,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
+      'side': playerSideLabel(
+        pieceSide,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
       'piece': pieceLabel(piece),
     });
   }
 
   String oneStepOnly() => _lookup('oneStepOnly');
 
-  String movedToEmpty(PieceSide actor, GamePiece piece) {
+  String movedToEmpty(
+    PieceSide actor,
+    PieceSide? playerOneSide,
+    GamePiece piece, {
+    bool computerOpponent = false,
+  }) {
     return _format(_lookup('movedToEmpty'), <String, String>{
-      'actor': sideLabel(actor),
+      'actor': playerSideLabel(
+        actor,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
       'piece': pieceLabel(piece),
     });
   }
@@ -222,40 +345,71 @@ class JungleStrings {
 
   String mutualElimination({
     required PieceSide actor,
+    required PieceSide? playerOneSide,
     required GamePiece attacker,
     required PieceSide defenderSide,
     required GamePiece defender,
+    bool computerOpponent = false,
   }) {
     return _format(_lookup('mutualElimination'), <String, String>{
-      'actor': sideLabel(actor),
+      'actor': playerSideLabel(
+        actor,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
       'attacker': pieceLabel(attacker),
-      'defenderSide': sideLabel(defenderSide),
+      'defenderSide': playerSideLabel(
+        defenderSide,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
       'defender': pieceLabel(defender),
     });
   }
 
   String capturedPiece({
     required PieceSide actor,
+    required PieceSide? playerOneSide,
     required GamePiece attacker,
     required PieceSide defenderSide,
     required GamePiece defender,
+    bool computerOpponent = false,
   }) {
     return _format(_lookup('capturedPiece'), <String, String>{
-      'actor': sideLabel(actor),
+      'actor': playerSideLabel(
+        actor,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
       'attacker': pieceLabel(attacker),
-      'defenderSide': sideLabel(defenderSide),
+      'defenderSide': playerSideLabel(
+        defenderSide,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
       'defender': pieceLabel(defender),
     });
   }
 
-  String winnerMessage(PieceSide winner, GameEndReason? reason) {
+  String winnerMessage(
+    PieceSide winner,
+    PieceSide? playerOneSide,
+    GameEndReason? reason, {
+    bool computerOpponent = false,
+  }) {
     return _format(
       _lookup(
         reason == GameEndReason.noLegalAction
             ? 'winnerNoLegalAction'
             : 'winnerElimination',
       ),
-      <String, String>{'side': sideLabel(winner)},
+      <String, String>{
+        'side': playerSideLabel(
+          winner,
+          playerOneSide,
+          computerOpponent: computerOpponent,
+        ),
+      },
     );
   }
 
@@ -268,9 +422,19 @@ class JungleStrings {
     return _format(_lookup(key), <String, String>{'limit': '$limit'});
   }
 
-  String turnMessage(PieceSide side, int turnsWithoutCapture, int limit) {
+  String turnMessage(
+    PieceSide side,
+    PieceSide? playerOneSide,
+    int turnsWithoutCapture,
+    int limit, {
+    bool computerOpponent = false,
+  }) {
     return _format(_lookup('turnMessage'), <String, String>{
-      'side': sideLabel(side),
+      'side': playerSideLabel(
+        side,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
       'count': '$turnsWithoutCapture',
       'limit': '$limit',
     });
@@ -279,32 +443,62 @@ class JungleStrings {
   String remainingAfterCapture({
     required String action,
     required PieceSide opponent,
+    required PieceSide? playerOneSide,
     required int remaining,
     required String turn,
+    bool computerOpponent = false,
   }) {
     return _format(_lookup('remainingAfterCapture'), <String, String>{
       'action': action,
-      'side': sideLabel(opponent),
+      'side': playerSideLabel(
+        opponent,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
       'remaining': '$remaining',
       'turn': turn,
     });
   }
 
-  String currentTurn(PieceSide side) {
+  String currentTurn(
+    PieceSide side,
+    PieceSide? playerOneSide, {
+    bool computerOpponent = false,
+  }) {
     return _format(_lookup('currentTurn'), <String, String>{
-      'side': sideLabel(side),
+      'side': playerSideLabel(
+        side,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
     });
   }
 
-  String victoryHeading(PieceSide side) {
+  String victoryHeading(
+    PieceSide side,
+    PieceSide? playerOneSide, {
+    bool computerOpponent = false,
+  }) {
     return _format(_lookup('victoryHeading'), <String, String>{
-      'side': sideLabel(side),
+      'side': playerSideLabel(
+        side,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
     });
   }
 
-  String sideRemaining(PieceSide side) {
+  String sideRemaining(
+    PieceSide side,
+    PieceSide? playerOneSide, {
+    bool computerOpponent = false,
+  }) {
     return _format(_lookup('sideRemaining'), <String, String>{
-      'side': sideLabel(side),
+      'side': playerSideLabel(
+        side,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
     });
   }
 
@@ -312,9 +506,31 @@ class JungleStrings {
     return _format(_lookup('piecesCount'), <String, String>{'count': '$count'});
   }
 
-  String gameOverWinner(PieceSide side) {
+  String gameOverWinner(
+    PieceSide side,
+    PieceSide? playerOneSide, {
+    bool computerOpponent = false,
+  }) {
     return _format(_lookup('gameOverWinner'), <String, String>{
-      'side': sideLabel(side),
+      'side': playerSideLabel(
+        side,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
+    });
+  }
+
+  String aiThinking(
+    PieceSide side,
+    PieceSide? playerOneSide, {
+    bool computerOpponent = false,
+  }) {
+    return _format(_lookup('aiThinking'), <String, String>{
+      'side': playerSideLabel(
+        side,
+        playerOneSide,
+        computerOpponent: computerOpponent,
+      ),
     });
   }
 
@@ -354,12 +570,23 @@ const Map<String, String> _englishStrings = <String, String>{
   'undoUnavailable': 'Already at the opening',
   'undoTitle': 'Confirm undo?',
   'undoContent': 'After watching an ad, the game will go back one move.',
+  'undoContentComputer':
+      'After watching an ad, the game will go back one full player-computer round.',
   'cancel': 'Cancel',
   'watchAdAndUndo': 'Watch ad and undo',
   'undoingLabel': 'Undoing',
   'rulesTitle': 'Rules',
   'drawHeading': 'Draw',
   'gameOverPrompt': 'Tap restart to begin the next game',
+  'gameModeLabel': 'Game mode',
+  'gameMode.localTwoPlayer': 'Two players',
+  'gameMode.vsComputer': 'Computer',
+  'aiDifficultyLabel': 'Computer difficulty',
+  'aiDifficulty.easy': 'Easy',
+  'aiDifficulty.normal': 'Normal',
+  'aiDifficulty.hard': 'Hard',
+  'modeChangeTitle': 'Change mode?',
+  'modeChangeContent': 'Switching to {mode} will restart the current game.',
   'side.red': 'Red',
   'side.blue': 'Blue',
   'animal.1': 'Rat',
@@ -371,36 +598,52 @@ const Map<String, String> _englishStrings = <String, String>{
   'animal.7': 'Lion',
   'animal.8': 'Elephant',
   'pieceLabel': 'No. {rank} {animal}',
+  'firstFlipAssignment':
+      'Player 1 flipped {side} {piece}. Player 1 is {side}; Player 2 is {opponentSide}.',
+  'firstFlipAssignmentComputer':
+      'You flipped {side} {piece}. You are {side}; the computer is {opponentSide}.',
+  'firstFlipToastMessage':
+      'You revealed a {side} piece. You are {side} this game; now it is {nextPlayer}\'s turn.',
+  'firstFlipToastMessageComputer':
+      'You revealed a {side} piece. You are {side}; now it is {nextPlayer}\'s turn.',
+  'firstFlipToastTitle': 'Side confirmed',
+  'openingHeading': 'Player 1 flips first',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Player 2',
+  'player.one': 'Player 1',
+  'player.you': 'You',
+  'player.computer': 'Computer',
   'openingTurn':
-      '{side} starts: each turn, flip one hidden piece or move one of your pieces.',
+      'Player 1 flips one hidden piece first. That color becomes Player 1\'s side.',
   'adThenUndo': 'The move will be undone after the ad.',
   'undoingStatus': 'Undoing...',
   'undoRestoredOpening': 'Undone, back to the opening. {next}',
   'undoRestoredPrevious': 'Undone, back to the previous move. {next}',
   'undoTurn':
-      "It is {side}'s turn: flip a piece or move one step. Non-captures {count}/{limit}.",
+      '{side}\'s turn: flip a piece or move one step. Non-captures {count}/{limit}.',
   'selectionCanceled':
       'Selection canceled. You can flip a piece or choose a piece again.',
   'selectedPiece': '{side} selected {piece}.',
   'choosePieceFirst':
       'Flip a hidden piece first, or select one of your pieces before moving.',
   'selectedPieceMissing': 'The selected piece is gone. Please choose again.',
-  'flippedPiece': '{actor} flipped {side} {piece}.',
+  'flippedPiece': '{actor} flipped {side}\'s {piece}.',
   'oneStepOnly': 'You can only move one square up, down, left, or right.',
   'movedToEmpty': '{actor} moved {piece} to an empty square.',
   'cannotMoveToHidden': 'You cannot move onto a hidden piece. Flip it instead.',
   'cannotCaptureOwn': 'You cannot capture your own piece.',
   'cannotCapture': '{attacker} cannot capture {defender}.',
   'mutualElimination':
-      "{actor}'s {attacker} and {defenderSide}'s {defender} eliminated each other.",
-  'capturedPiece': "{actor}'s {attacker} captured {defenderSide}'s {defender}.",
+      '{actor}\'s {attacker} and {defenderSide}\'s {defender} eliminated each other.',
+  'capturedPiece':
+      '{actor}\'s {attacker} captured {defenderSide}\'s {defender}.',
   'winnerNoLegalAction': '{side} wins. The opponent has no legal action left.',
   'winnerElimination': '{side} wins after capturing all opposing pieces.',
   'drawNonCaptureLimit': '{limit} turns without a capture. Draw.',
   'drawNoLegalActions': 'Neither side has a legal action. Draw.',
   'drawMutualElimination': 'The last pieces eliminated each other. Draw.',
   'turnMessage':
-      "{side}'s turn: flip a piece or move one step. Non-captures {count}/{limit}.",
+      '{side}\'s turn: flip a piece or move one step. Non-captures {count}/{limit}.',
   'remainingAfterCapture':
       '{action} {side} has {remaining} piece(s) left, including hidden pieces.\n{turn}',
   'currentTurn': 'Current turn: {side}',
@@ -408,6 +651,7 @@ const Map<String, String> _englishStrings = <String, String>{
   'sideRemaining': '{side} remaining',
   'piecesCount': '{count} piece(s)',
   'gameOverWinner': '{side} wins',
+  'aiThinking': '{side} is thinking...',
   'rule1':
       '1. The board is 4 x 4, with 16 pieces. Red and Blue each have ranks 1 to 8.',
   'rule2':
@@ -442,12 +686,22 @@ const Map<String, String> _chineseStrings = <String, String>{
   'undoUnavailable': '已经是开局',
   'undoTitle': '确认悔棋？',
   'undoContent': '观看广告后将回退到上一步。',
+  'undoContentComputer': '观看广告后将回退一整轮玩家和电脑的操作。',
   'cancel': '取消',
   'watchAdAndUndo': '观看广告并悔棋',
   'undoingLabel': '悔棋中',
   'rulesTitle': '规则说明',
   'drawHeading': '平局',
   'gameOverPrompt': '点击重新开始进入下一局',
+  'gameModeLabel': '游戏模式',
+  'gameMode.localTwoPlayer': '本地双人',
+  'gameMode.vsComputer': '人机对战',
+  'aiDifficultyLabel': '电脑难度',
+  'aiDifficulty.easy': '简单',
+  'aiDifficulty.normal': '普通',
+  'aiDifficulty.hard': '困难',
+  'modeChangeTitle': '切换模式？',
+  'modeChangeContent': '切换到{mode}会重新开始当前棋局。',
   'side.red': '红',
   'side.blue': '蓝',
   'animal.1': '鼠',
@@ -459,37 +713,51 @@ const Map<String, String> _chineseStrings = <String, String>{
   'animal.7': '狮',
   'animal.8': '象',
   'pieceLabel': '{rank}号{animal}',
-  'openingTurn': '{side}方先手：每回合可以翻一张牌，或者移动一枚自己的棋子。',
+  'firstFlipAssignment':
+      '玩家1翻出了{side}方 {piece}。玩家1是{side}方，玩家2是{opponentSide}方。',
+  'firstFlipAssignmentComputer':
+      '你翻出了{side}方 {piece}。你是{side}方，电脑是{opponentSide}方。',
+  'firstFlipToastMessage': '你翻出了{side}方棋子，本局你执{side}方。现在轮到{nextPlayer}。',
+  'firstFlipToastMessageComputer':
+      '你翻出了{side}方棋子，本局你执{side}方。现在轮到{nextPlayer}。',
+  'firstFlipToastTitle': '阵营已确定',
+  'openingHeading': '玩家1先翻棋',
+  'playerSideLabel': '{player}（{side}方）',
+  'player.two': '玩家2',
+  'player.one': '玩家1',
+  'player.you': '你',
+  'player.computer': '电脑',
+  'openingTurn': '玩家1先翻一张暗棋，翻出的颜色就是玩家1阵营。',
   'adThenUndo': '广告结束后将悔棋。',
   'undoingStatus': '悔棋中...',
   'undoRestoredOpening': '已悔棋，回到开局。{next}',
   'undoRestoredPrevious': '已悔棋，回到上一步。{next}',
-  'undoTurn': '轮到{side}方：翻牌或走一步。连续未吃子 {count}/{limit}。',
+  'undoTurn': '轮到{side}：翻牌或走一步。连续未吃子 {count}/{limit}。',
   'selectionCanceled': '已取消选中，可以重新选择翻牌或走棋。',
-  'selectedPiece': '{side}方已选中 {piece}。',
+  'selectedPiece': '{side}已选中 {piece}。',
   'choosePieceFirst': '请先翻一张暗棋，或者选中自己的棋子再走一步。',
   'selectedPieceMissing': '选中的棋子不存在了，请重新操作。',
-  'flippedPiece': '{actor}方翻开了 {side}方 {piece}。',
+  'flippedPiece': '{actor}翻开了{side}的 {piece}。',
   'oneStepOnly': '每次只能上下左右移动一步。',
-  'movedToEmpty': '{actor}方把 {piece} 移动到空位。',
+  'movedToEmpty': '{actor}把 {piece} 移动到空位。',
   'cannotMoveToHidden': '不能走到暗棋上，只能翻开它。',
   'cannotCaptureOwn': '不能吃自己的棋子。',
   'cannotCapture': '{attacker} 不能吃掉 {defender}。',
-  'mutualElimination':
-      '{actor}方的 {attacker} 与 {defenderSide}方的 {defender} 同归于尽。',
-  'capturedPiece': '{actor}方用 {attacker} 吃掉了 {defenderSide}方 {defender}。',
-  'winnerNoLegalAction': '{side}方获胜，对手已经没有可执行的操作。',
-  'winnerElimination': '{side}方获胜，已吃光对手所有棋子。',
+  'mutualElimination': '{actor}的 {attacker} 与 {defenderSide}的 {defender} 同归于尽。',
+  'capturedPiece': '{actor}用 {attacker} 吃掉了{defenderSide}的 {defender}。',
+  'winnerNoLegalAction': '{side}获胜，对手已经没有可执行的操作。',
+  'winnerElimination': '{side}获胜，已吃光对手所有棋子。',
   'drawNonCaptureLimit': '连续 {limit} 个回合没有吃子，平局。',
   'drawNoLegalActions': '双方都没有可执行的操作，平局。',
   'drawMutualElimination': '双方最后的棋子同归于尽，平局。',
-  'turnMessage': '轮到{side}方：翻牌或走一步。连续未吃子 {count}/{limit}。',
-  'remainingAfterCapture': '{action} {side}方还剩 {remaining} 枚（含暗棋）。\n{turn}',
-  'currentTurn': '当前回合：{side}方',
-  'victoryHeading': '{side}方胜利',
-  'sideRemaining': '{side}方剩余',
+  'turnMessage': '轮到{side}：翻牌或走一步。连续未吃子 {count}/{limit}。',
+  'remainingAfterCapture': '{action} {side}还剩 {remaining} 枚（含暗棋）。\n{turn}',
+  'currentTurn': '当前回合：{side}',
+  'victoryHeading': '{side}胜利',
+  'sideRemaining': '{side}剩余',
   'piecesCount': '{count} 枚',
-  'gameOverWinner': '{side}方赢',
+  'gameOverWinner': '{side}赢',
+  'aiThinking': '{side}思考中...',
   'rule1': '1. 棋盘为 4 x 4，共 16 枚棋子，红蓝双方各有 1 到 8 号。',
   'rule2': '2. 每回合只能二选一：翻开一张暗棋，或者移动一枚自己的明棋一步。',
   'rule3': '3. 只能上下左右移动，不能斜走，也不能一次移动多格。',
@@ -532,8 +800,17 @@ const Map<String, String> _spanishStrings = <String, String>{
   'animal.7': 'León',
   'animal.8': 'Elefante',
   'pieceLabel': 'N.º {rank} {animal}',
+  'firstFlipAssignment':
+      'Jugador 1 volteó {piece} de {side}. Jugador 1 es {side}; Jugador 2 es {opponentSide}.',
+  'firstFlipToastMessage':
+      'Revelaste una pieza {side}. En esta partida eres {side}; ahora le toca a {nextPlayer}.',
+  'firstFlipToastTitle': 'Bando definido',
+  'openingHeading': 'Jugador 1 voltea primero',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Jugador 2',
+  'player.one': 'Jugador 1',
   'openingTurn':
-      '{side} empieza: en cada turno, voltea una pieza oculta o mueve una pieza propia.',
+      'Jugador 1 voltea primero una pieza oculta. El color revelado será su bando.',
   'adThenUndo': 'El movimiento se deshará después del anuncio.',
   'undoingStatus': 'Deshaciendo...',
   'undoRestoredOpening': 'Deshecho, vuelta al inicio. {next}',
@@ -624,8 +901,17 @@ const Map<String, String> _italianStrings = <String, String>{
   'animal.7': 'Leone',
   'animal.8': 'Elefante',
   'pieceLabel': 'N. {rank} {animal}',
+  'firstFlipAssignment':
+      'Giocatore 1 ha scoperto {piece} {side}. Giocatore 1 è {side}; Giocatore 2 è {opponentSide}.',
+  'firstFlipToastMessage':
+      'Hai scoperto una pedina {side}. In questa partita sei {side}; ora tocca a {nextPlayer}.',
+  'firstFlipToastTitle': 'Lato confermato',
+  'openingHeading': 'Giocatore 1 scopre per primo',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Giocatore 2',
+  'player.one': 'Giocatore 1',
   'openingTurn':
-      '{side} inizia: a ogni turno scopri una pedina nascosta o muovi una tua pedina.',
+      'Giocatore 1 scopre per primo una pedina nascosta. Il colore scoperto diventa il suo lato.',
   'adThenUndo': 'La mossa verrà annullata dopo l’annuncio.',
   'undoingStatus': 'Annullamento...',
   'undoRestoredOpening': 'Annullato, ritorno all’inizio. {next}',
@@ -716,8 +1002,17 @@ const Map<String, String> _frenchStrings = <String, String>{
   'animal.7': 'Lion',
   'animal.8': 'Éléphant',
   'pieceLabel': 'No {rank} {animal}',
+  'firstFlipAssignment':
+      'Joueur 1 a retourné {piece} {side}. Joueur 1 est {side}; Joueur 2 est {opponentSide}.',
+  'firstFlipToastMessage':
+      'Vous avez révélé une pièce {side}. Dans cette partie, vous êtes {side}; c’est au tour de {nextPlayer}.',
+  'firstFlipToastTitle': 'Camp confirmé',
+  'openingHeading': 'Joueur 1 retourne en premier',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Joueur 2',
+  'player.one': 'Joueur 1',
   'openingTurn':
-      '{side} commence : à chaque tour, retournez une pièce cachée ou déplacez une de vos pièces.',
+      'Joueur 1 retourne d’abord une pièce cachée. La couleur révélée devient son camp.',
   'adThenUndo': 'Le coup sera annulé après la publicité.',
   'undoingStatus': 'Annulation...',
   'undoRestoredOpening': 'Annulé, retour au début. {next}',
@@ -808,8 +1103,17 @@ const Map<String, String> _germanStrings = <String, String>{
   'animal.7': 'Löwe',
   'animal.8': 'Elefant',
   'pieceLabel': 'Nr. {rank} {animal}',
+  'firstFlipAssignment':
+      'Spieler 1 hat {side} {piece} aufgedeckt. Spieler 1 ist {side}; Spieler 2 ist {opponentSide}.',
+  'firstFlipToastMessage':
+      'Du hast eine {side}-Figur aufgedeckt. In dieser Partie spielst du {side}; jetzt ist {nextPlayer} am Zug.',
+  'firstFlipToastTitle': 'Seite bestätigt',
+  'openingHeading': 'Spieler 1 deckt zuerst auf',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Spieler 2',
+  'player.one': 'Spieler 1',
   'openingTurn':
-      '{side} beginnt: Decke pro Zug eine verdeckte Figur auf oder bewege eine eigene Figur.',
+      'Spieler 1 deckt zuerst eine verdeckte Figur auf. Die aufgedeckte Farbe wird seine Seite.',
   'adThenUndo': 'Der Zug wird nach der Anzeige zurückgenommen.',
   'undoingStatus': 'Wird zurückgenommen...',
   'undoRestoredOpening': 'Zurückgenommen, wieder am Anfang. {next}',
@@ -902,8 +1206,17 @@ const Map<String, String> _portugueseStrings = <String, String>{
   'animal.7': 'Leão',
   'animal.8': 'Elefante',
   'pieceLabel': 'N.º {rank} {animal}',
+  'firstFlipAssignment':
+      'Jogador 1 virou {piece} {side}. Jogador 1 é {side}; Jogador 2 é {opponentSide}.',
+  'firstFlipToastMessage':
+      'Virou uma peça {side}. Nesta partida você é {side}; agora é a vez de {nextPlayer}.',
+  'firstFlipToastTitle': 'Lado confirmado',
+  'openingHeading': 'Jogador 1 vira primeiro',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Jogador 2',
+  'player.one': 'Jogador 1',
   'openingTurn':
-      '{side} começa: a cada turno, vire uma peça oculta ou mova uma peça sua.',
+      'Jogador 1 vira primeiro uma peça oculta. A cor revelada passa a ser o seu lado.',
   'adThenUndo': 'A jogada será desfeita depois do anúncio.',
   'undoingStatus': 'A desfazer...',
   'undoRestoredOpening': 'Desfeito, de volta ao início. {next}',
@@ -991,8 +1304,17 @@ const Map<String, String> _russianStrings = <String, String>{
   'animal.7': 'Лев',
   'animal.8': 'Слон',
   'pieceLabel': '№ {rank} {animal}',
+  'firstFlipAssignment':
+      'Игрок 1 открыл {side} {piece}. Игрок 1 — {side}; Игрок 2 — {opponentSide}.',
+  'firstFlipToastMessage':
+      'Вы открыли фигуру {side}. В этой партии вы играете за {side}; теперь ходит {nextPlayer}.',
+  'firstFlipToastTitle': 'Сторона выбрана',
+  'openingHeading': 'Игрок 1 открывает первым',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Игрок 2',
+  'player.one': 'Игрок 1',
   'openingTurn':
-      '{side} начинают: за ход откройте скрытую фигуру или передвиньте свою.',
+      'Игрок 1 сначала открывает скрытую фигуру. Открытый цвет становится его стороной.',
   'adThenUndo': 'Ход будет отменен после рекламы.',
   'undoingStatus': 'Отмена хода...',
   'undoRestoredOpening': 'Ход отменен, возврат к началу. {next}',
@@ -1078,8 +1400,17 @@ const Map<String, String> _hindiStrings = <String, String>{
   'animal.7': 'सिंह',
   'animal.8': 'हाथी',
   'pieceLabel': 'नं. {rank} {animal}',
+  'firstFlipAssignment':
+      'खिलाड़ी 1 ने {side} {piece} खोला। खिलाड़ी 1 {side} है; खिलाड़ी 2 {opponentSide} है।',
+  'firstFlipToastMessage':
+      'आपने {side} गोटी खोली। इस खेल में आप {side} हैं; अब {nextPlayer} की बारी है।',
+  'firstFlipToastTitle': 'पक्ष तय हुआ',
+  'openingHeading': 'खिलाड़ी 1 पहले खोले',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'खिलाड़ी 2',
+  'player.one': 'खिलाड़ी 1',
   'openingTurn':
-      '{side} शुरू करता है: हर चाल में एक छिपी गोटी खोलें या अपनी एक गोटी चलें।',
+      'खिलाड़ी 1 पहले एक छिपी गोटी खोलता है। खुला रंग खिलाड़ी 1 का पक्ष बनता है।',
   'adThenUndo': 'विज्ञापन के बाद चाल वापस ली जाएगी।',
   'undoingStatus': 'वापस ले रहे हैं...',
   'undoRestoredOpening': 'वापस लिया, शुरुआत पर लौटे। {next}',
@@ -1163,7 +1494,16 @@ const Map<String, String> _arabicStrings = <String, String>{
   'animal.7': 'أسد',
   'animal.8': 'فيل',
   'pieceLabel': 'رقم {rank} {animal}',
-  'openingTurn': '{side} يبدأ: في كل دور، اكشف قطعة مخفية أو حرّك إحدى قطعك.',
+  'firstFlipAssignment':
+      'كشف اللاعب 1 {piece} {side}. اللاعب 1 هو {side}؛ اللاعب 2 هو {opponentSide}.',
+  'firstFlipToastMessage':
+      'كشفت قطعة {side}. في هذه الجولة أنت {side}؛ الآن دور {nextPlayer}.',
+  'firstFlipToastTitle': 'تم تحديد الجانب',
+  'openingHeading': 'اللاعب 1 يكشف أولا',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'اللاعب 2',
+  'player.one': 'اللاعب 1',
+  'openingTurn': 'اللاعب 1 يكشف أولا قطعة مخفية. اللون المكشوف يصبح جانبه.',
   'adThenUndo': 'سيتم التراجع عن الحركة بعد الإعلان.',
   'undoingStatus': 'جار التراجع...',
   'undoRestoredOpening': 'تم التراجع، عودة إلى البداية. {next}',
@@ -1245,7 +1585,16 @@ const Map<String, String> _japaneseStrings = <String, String>{
   'animal.7': 'ライオン',
   'animal.8': 'ゾウ',
   'pieceLabel': '{rank}番 {animal}',
-  'openingTurn': '{side}の先手：各手番で伏せ駒を開くか、自分の駒を動かします。',
+  'firstFlipAssignment':
+      'プレイヤー1が{side}の{piece}を開きました。プレイヤー1は{side}、プレイヤー2は{opponentSide}です。',
+  'firstFlipToastMessage':
+      '{side}の駒を開きました。この対局ではあなたは{side}です。次は{nextPlayer}の手番です。',
+  'firstFlipToastTitle': '陣営が決まりました',
+  'openingHeading': 'プレイヤー1が先に開く',
+  'playerSideLabel': '{player}（{side}）',
+  'player.two': 'プレイヤー2',
+  'player.one': 'プレイヤー1',
+  'openingTurn': 'プレイヤー1が最初に伏せ駒を1枚開きます。開いた色がプレイヤー1の陣営です。',
   'adThenUndo': '広告のあとで手を戻します。',
   'undoingStatus': '戻しています...',
   'undoRestoredOpening': '待ったしました。開始局面に戻りました。{next}',
@@ -1318,7 +1667,16 @@ const Map<String, String> _koreanStrings = <String, String>{
   'animal.7': '사자',
   'animal.8': '코끼리',
   'pieceLabel': '{rank}번 {animal}',
-  'openingTurn': '{side} 선공: 매 턴 숨은 말을 뒤집거나 자신의 말을 이동하세요.',
+  'firstFlipAssignment':
+      '플레이어 1이 {side} {piece}을(를) 뒤집었습니다. 플레이어 1은 {side}, 플레이어 2는 {opponentSide}입니다.',
+  'firstFlipToastMessage':
+      '{side} 말을 뒤집었습니다. 이번 판에서 당신은 {side}입니다. 이제 {nextPlayer} 차례입니다.',
+  'firstFlipToastTitle': '편이 정해졌습니다',
+  'openingHeading': '플레이어 1이 먼저 뒤집기',
+  'playerSideLabel': '{player}({side})',
+  'player.two': '플레이어 2',
+  'player.one': '플레이어 1',
+  'openingTurn': '플레이어 1이 먼저 숨은 말을 하나 뒤집습니다. 나온 색이 플레이어 1의 편입니다.',
   'adThenUndo': '광고 후 수를 되돌립니다.',
   'undoingStatus': '되돌리는 중...',
   'undoRestoredOpening': '되돌렸습니다. 시작 위치로 돌아왔습니다. {next}',
@@ -1394,8 +1752,17 @@ const Map<String, String> _indonesianStrings = <String, String>{
   'animal.7': 'Singa',
   'animal.8': 'Gajah',
   'pieceLabel': 'No. {rank} {animal}',
+  'firstFlipAssignment':
+      'Pemain 1 membuka {piece} {side}. Pemain 1 adalah {side}; Pemain 2 adalah {opponentSide}.',
+  'firstFlipToastMessage':
+      'Kamu membuka bidak {side}. Di permainan ini kamu adalah {side}; sekarang giliran {nextPlayer}.',
+  'firstFlipToastTitle': 'Sisi ditentukan',
+  'openingHeading': 'Pemain 1 membuka dulu',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Pemain 2',
+  'player.one': 'Pemain 1',
   'openingTurn':
-      '{side} mulai: tiap giliran, buka bidak tersembunyi atau gerakkan bidak sendiri.',
+      'Pemain 1 membuka satu bidak tersembunyi dulu. Warna yang terbuka menjadi sisi Pemain 1.',
   'adThenUndo': 'Langkah akan diurungkan setelah iklan.',
   'undoingStatus': 'Mengurungkan...',
   'undoRestoredOpening': 'Diurungkan, kembali ke awal. {next}',
@@ -1484,8 +1851,17 @@ const Map<String, String> _dutchStrings = <String, String>{
   'animal.7': 'Leeuw',
   'animal.8': 'Olifant',
   'pieceLabel': 'Nr. {rank} {animal}',
+  'firstFlipAssignment':
+      'Speler 1 draaide {side} {piece} om. Speler 1 is {side}; Speler 2 is {opponentSide}.',
+  'firstFlipToastMessage':
+      'Je hebt een {side} stuk onthuld. Deze partij ben jij {side}; nu is {nextPlayer} aan de beurt.',
+  'firstFlipToastTitle': 'Kant bevestigd',
+  'openingHeading': 'Speler 1 draait eerst om',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Speler 2',
+  'player.one': 'Speler 1',
   'openingTurn':
-      '{side} begint: draai per beurt een verborgen stuk om of verplaats een eigen stuk.',
+      'Speler 1 draait eerst een verborgen stuk om. De onthulde kleur wordt de kant van Speler 1.',
   'adThenUndo': 'De zet wordt na de advertentie ongedaan gemaakt.',
   'undoingStatus': 'Ongedaan maken...',
   'undoRestoredOpening': 'Ongedaan gemaakt, terug naar de start. {next}',
@@ -1576,8 +1952,17 @@ const Map<String, String> _polishStrings = <String, String>{
   'animal.7': 'Lew',
   'animal.8': 'Słoń',
   'pieceLabel': 'Nr {rank} {animal}',
+  'firstFlipAssignment':
+      'Gracz 1 odkrył {side} {piece}. Gracz 1 to {side}; Gracz 2 to {opponentSide}.',
+  'firstFlipToastMessage':
+      'Odkryto figurę {side}. W tej partii grasz jako {side}; teraz ruch ma {nextPlayer}.',
+  'firstFlipToastTitle': 'Strona ustalona',
+  'openingHeading': 'Gracz 1 odkrywa pierwszy',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Gracz 2',
+  'player.one': 'Gracz 1',
   'openingTurn':
-      '{side} zaczynają: w każdej turze odkryj zakrytą figurę albo przesuń własną.',
+      'Gracz 1 najpierw odkrywa ukrytą figurę. Odkryty kolor staje się jego stroną.',
   'adThenUndo': 'Ruch zostanie cofnięty po reklamie.',
   'undoingStatus': 'Cofanie...',
   'undoRestoredOpening': 'Cofnięto, powrót do początku. {next}',
@@ -1666,8 +2051,17 @@ const Map<String, String> _romanianStrings = <String, String>{
   'animal.7': 'Leu',
   'animal.8': 'Elefant',
   'pieceLabel': 'Nr. {rank} {animal}',
+  'firstFlipAssignment':
+      'Jucătorul 1 a întors {piece} {side}. Jucătorul 1 este {side}; Jucătorul 2 este {opponentSide}.',
+  'firstFlipToastMessage':
+      'Ai descoperit o piesă {side}. În această partidă ești {side}; acum urmează {nextPlayer}.',
+  'firstFlipToastTitle': 'Partea a fost stabilită',
+  'openingHeading': 'Jucătorul 1 întoarce primul',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Jucătorul 2',
+  'player.one': 'Jucătorul 1',
   'openingTurn':
-      '{side} începe: la fiecare tură întoarce o piesă ascunsă sau mută o piesă proprie.',
+      'Jucătorul 1 întoarce mai întâi o piesă ascunsă. Culoarea descoperită devine partea lui.',
   'adThenUndo': 'Mutarea va fi anulată după reclamă.',
   'undoingStatus': 'Se anulează...',
   'undoRestoredOpening': 'Anulat, înapoi la început. {next}',
@@ -1754,8 +2148,17 @@ const Map<String, String> _ukrainianStrings = <String, String>{
   'animal.7': 'Лев',
   'animal.8': 'Слон',
   'pieceLabel': '№ {rank} {animal}',
+  'firstFlipAssignment':
+      'Гравець 1 відкрив {side} {piece}. Гравець 1 — {side}; Гравець 2 — {opponentSide}.',
+  'firstFlipToastMessage':
+      'Ви відкрили фігуру {side}. У цій партії ви граєте за {side}; тепер хід {nextPlayer}.',
+  'firstFlipToastTitle': 'Сторону визначено',
+  'openingHeading': 'Гравець 1 відкриває першим',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Гравець 2',
+  'player.one': 'Гравець 1',
   'openingTurn':
-      '{side} починають: за хід відкрийте приховану фігуру або пересуньте свою.',
+      'Гравець 1 спочатку відкриває приховану фігуру. Відкритий колір стає його стороною.',
   'adThenUndo': 'Хід буде скасовано після реклами.',
   'undoingStatus': 'Скасування...',
   'undoRestoredOpening': 'Скасовано, повернення до початку. {next}',
@@ -1843,8 +2246,17 @@ const Map<String, String> _turkishStrings = <String, String>{
   'animal.7': 'Aslan',
   'animal.8': 'Fil',
   'pieceLabel': 'No. {rank} {animal}',
+  'firstFlipAssignment':
+      'Oyuncu 1 {side} {piece} taşını açtı. Oyuncu 1 {side}; Oyuncu 2 {opponentSide}.',
+  'firstFlipToastMessage':
+      '{side} taşını açtın. Bu oyunda {side} tarafısın; şimdi sıra {nextPlayer} tarafında.',
+  'firstFlipToastTitle': 'Taraf belirlendi',
+  'openingHeading': 'Oyuncu 1 önce açar',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Oyuncu 2',
+  'player.one': 'Oyuncu 1',
   'openingTurn':
-      '{side} başlar: her tur gizli bir taşı aç veya kendi taşını hareket ettir.',
+      'Oyuncu 1 önce bir gizli taşı açar. Açılan renk Oyuncu 1’in tarafı olur.',
   'adThenUndo': 'Hamle reklamdan sonra geri alınacak.',
   'undoingStatus': 'Geri alınıyor...',
   'undoRestoredOpening': 'Geri alındı, başlangıca dönüldü. {next}',
@@ -1931,8 +2343,17 @@ const Map<String, String> _greekStrings = <String, String>{
   'animal.7': 'Λιοντάρι',
   'animal.8': 'Ελέφαντας',
   'pieceLabel': 'Νο. {rank} {animal}',
+  'firstFlipAssignment':
+      'Ο Παίκτης 1 άνοιξε {side} {piece}. Ο Παίκτης 1 είναι {side}; ο Παίκτης 2 είναι {opponentSide}.',
+  'firstFlipToastMessage':
+      'Άνοιξες κομμάτι {side}. Σε αυτή την παρτίδα είσαι {side}; τώρα παίζει {nextPlayer}.',
+  'firstFlipToastTitle': 'Η πλευρά ορίστηκε',
+  'openingHeading': 'Ο Παίκτης 1 ανοίγει πρώτος',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Παίκτης 2',
+  'player.one': 'Παίκτης 1',
   'openingTurn':
-      '{side} ξεκινά: κάθε γύρο, γύρισε ένα κρυφό κομμάτι ή κίνησε ένα δικό σου.',
+      'Ο Παίκτης 1 ανοίγει πρώτα ένα κρυφό κομμάτι. Το χρώμα που ανοίγει γίνεται η πλευρά του.',
   'adThenUndo': 'Η κίνηση θα αναιρεθεί μετά τη διαφήμιση.',
   'undoingStatus': 'Αναίρεση...',
   'undoRestoredOpening': 'Αναιρέθηκε, πίσω στην αρχή. {next}',
@@ -2023,8 +2444,17 @@ const Map<String, String> _swedishStrings = <String, String>{
   'animal.7': 'Lejon',
   'animal.8': 'Elefant',
   'pieceLabel': 'Nr {rank} {animal}',
+  'firstFlipAssignment':
+      'Spelare 1 vände {side} {piece}. Spelare 1 är {side}; Spelare 2 är {opponentSide}.',
+  'firstFlipToastMessage':
+      'Du vände en {side} pjäs. I denna omgång är du {side}; nu är det {nextPlayer}s tur.',
+  'firstFlipToastTitle': 'Sida bekräftad',
+  'openingHeading': 'Spelare 1 vänder först',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Spelare 2',
+  'player.one': 'Spelare 1',
   'openingTurn':
-      '{side} börjar: vänd en dold pjäs eller flytta en egen pjäs varje tur.',
+      'Spelare 1 vänder först en dold pjäs. Färgen som visas blir Spelare 1s sida.',
   'adThenUndo': 'Draget ångras efter annonsen.',
   'undoingStatus': 'Ångrar...',
   'undoRestoredOpening': 'Ångrat, tillbaka till start. {next}',
@@ -2109,8 +2539,17 @@ const Map<String, String> _czechStrings = <String, String>{
   'animal.7': 'Lev',
   'animal.8': 'Slon',
   'pieceLabel': 'Č. {rank} {animal}',
+  'firstFlipAssignment':
+      'Hráč 1 otočil {side} {piece}. Hráč 1 je {side}; Hráč 2 je {opponentSide}.',
+  'firstFlipToastMessage':
+      'Otočil(a) jsi figurku {side}. V této hře jsi {side}; teď hraje {nextPlayer}.',
+  'firstFlipToastTitle': 'Strana potvrzena',
+  'openingHeading': 'Hráč 1 otáčí první',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Hráč 2',
+  'player.one': 'Hráč 1',
   'openingTurn':
-      '{side} začíná: každý tah otoč skrytou figurku nebo pohni vlastní.',
+      'Hráč 1 nejprve otočí skrytou figurku. Otočená barva se stane jeho stranou.',
   'adThenUndo': 'Tah se vrátí po reklamě.',
   'undoingStatus': 'Vrací se...',
   'undoRestoredOpening': 'Vráceno, zpět na začátek. {next}',
@@ -2196,8 +2635,17 @@ const Map<String, String> _vietnameseStrings = <String, String>{
   'animal.7': 'Sư tử',
   'animal.8': 'Voi',
   'pieceLabel': 'Số {rank} {animal}',
+  'firstFlipAssignment':
+      'Người chơi 1 đã lật {piece} {side}. Người chơi 1 là {side}; Người chơi 2 là {opponentSide}.',
+  'firstFlipToastMessage':
+      'Bạn đã lật quân {side}. Ván này bạn là {side}; bây giờ đến lượt {nextPlayer}.',
+  'firstFlipToastTitle': 'Đã xác định phe',
+  'openingHeading': 'Người chơi 1 lật trước',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Người chơi 2',
+  'player.one': 'Người chơi 1',
   'openingTurn':
-      '{side} đi trước: mỗi lượt lật một quân úp hoặc di chuyển quân của mình.',
+      'Người chơi 1 lật trước một quân úp. Màu được lật sẽ là phe của Người chơi 1.',
   'adThenUndo': 'Nước đi sẽ được hoàn tác sau quảng cáo.',
   'undoingStatus': 'Đang hoàn tác...',
   'undoRestoredOpening': 'Đã hoàn tác, quay lại thế đầu. {next}',
@@ -2281,8 +2729,17 @@ const Map<String, String> _bengaliStrings = <String, String>{
   'animal.7': 'সিংহ',
   'animal.8': 'হাতি',
   'pieceLabel': 'নং {rank} {animal}',
+  'firstFlipAssignment':
+      'খেলোয়াড় ১ {side} {piece} খুলেছে। খেলোয়াড় ১ {side}; খেলোয়াড় ২ {opponentSide}।',
+  'firstFlipToastMessage':
+      'আপনি {side} গুটি খুলেছেন। এই খেলায় আপনি {side}; এখন {nextPlayer}-এর পালা।',
+  'firstFlipToastTitle': 'পক্ষ ঠিক হয়েছে',
+  'openingHeading': 'খেলোয়াড় ১ আগে খুলবে',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'খেলোয়াড় ২',
+  'player.one': 'খেলোয়াড় ১',
   'openingTurn':
-      '{side} শুরু করে: প্রতি চালে একটি লুকানো গুটি খুলুন বা নিজের গুটি চালুন।',
+      'খেলোয়াড় ১ আগে একটি লুকানো গুটি খুলবে। যে রং বের হবে সেটিই খেলোয়াড় ১-এর পক্ষ।',
   'adThenUndo': 'বিজ্ঞাপনের পরে চাল ফিরিয়ে নেওয়া হবে।',
   'undoingStatus': 'ফিরিয়ে নেওয়া হচ্ছে...',
   'undoRestoredOpening': 'ফিরিয়ে নেওয়া হয়েছে, শুরুতে ফিরে। {next}',
@@ -2367,8 +2824,17 @@ const Map<String, String> _hungarianStrings = <String, String>{
   'animal.7': 'Oroszlán',
   'animal.8': 'Elefánt',
   'pieceLabel': '{rank}. {animal}',
+  'firstFlipAssignment':
+      'Az 1. játékos felfordította: {side} {piece}. Az 1. játékos {side}; a 2. játékos {opponentSide}.',
+  'firstFlipToastMessage':
+      '{side} bábut fordítottál fel. Ebben a játszmában te vagy {side}; most {nextPlayer} következik.',
+  'firstFlipToastTitle': 'Az oldal eldőlt',
+  'openingHeading': 'Az 1. játékos fordít először',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': '2. játékos',
+  'player.one': '1. játékos',
   'openingTurn':
-      '{side} kezd: körönként fordíts fel egy rejtett bábut, vagy lépj egy saját bábuval.',
+      'Az 1. játékos először felfordít egy rejtett bábut. A felfedett szín lesz az ő oldala.',
   'adThenUndo': 'A lépés a reklám után visszavonódik.',
   'undoingStatus': 'Visszavonás...',
   'undoRestoredOpening': 'Visszavonva, vissza a kezdéshez. {next}',
@@ -2454,8 +2920,17 @@ const Map<String, String> _danishStrings = <String, String>{
   'animal.7': 'Løve',
   'animal.8': 'Elefant',
   'pieceLabel': 'Nr. {rank} {animal}',
+  'firstFlipAssignment':
+      'Spiller 1 vendte {side} {piece}. Spiller 1 er {side}; Spiller 2 er {opponentSide}.',
+  'firstFlipToastMessage':
+      'Du vendte en {side} brik. I dette spil er du {side}; nu er det {nextPlayer}s tur.',
+  'firstFlipToastTitle': 'Side fastlagt',
+  'openingHeading': 'Spiller 1 vender først',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Spiller 2',
+  'player.one': 'Spiller 1',
   'openingTurn':
-      '{side} starter: vend en skjult brik eller flyt en egen brik hver tur.',
+      'Spiller 1 vender først en skjult brik. Den viste farve bliver Spiller 1s side.',
   'adThenUndo': 'Trækket fortrydes efter annoncen.',
   'undoingStatus': 'Fortryder...',
   'undoRestoredOpening': 'Fortrudt, tilbage til start. {next}',
@@ -2542,8 +3017,17 @@ const Map<String, String> _finnishStrings = <String, String>{
   'animal.7': 'Leijona',
   'animal.8': 'Norsu',
   'pieceLabel': 'Nro {rank} {animal}',
+  'firstFlipAssignment':
+      'Pelaaja 1 käänsi {side} {piece}. Pelaaja 1 on {side}; Pelaaja 2 on {opponentSide}.',
+  'firstFlipToastMessage':
+      'Käänsit {side}-nappulan. Tässä pelissä olet {side}; nyt on {nextPlayer}n vuoro.',
+  'firstFlipToastTitle': 'Puoli vahvistettu',
+  'openingHeading': 'Pelaaja 1 kääntää ensin',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Pelaaja 2',
+  'player.one': 'Pelaaja 1',
   'openingTurn':
-      '{side} aloittaa: käännä vuorolla piilotettu nappula tai siirrä omaa.',
+      'Pelaaja 1 kääntää ensin yhden piilotetun nappulan. Paljastettu väri on Pelaaja 1:n puoli.',
   'adThenUndo': 'Siirto perutaan mainoksen jälkeen.',
   'undoingStatus': 'Perutaan...',
   'undoRestoredOpening': 'Peruttu, takaisin alkuun. {next}',
@@ -2630,8 +3114,17 @@ const Map<String, String> _norwegianStrings = <String, String>{
   'animal.7': 'Løve',
   'animal.8': 'Elefant',
   'pieceLabel': 'Nr. {rank} {animal}',
+  'firstFlipAssignment':
+      'Spiller 1 snudde {side} {piece}. Spiller 1 er {side}; Spiller 2 er {opponentSide}.',
+  'firstFlipToastMessage':
+      'Du snudde en {side} brikke. I dette spillet er du {side}; nå er det {nextPlayer}s tur.',
+  'firstFlipToastTitle': 'Side bekreftet',
+  'openingHeading': 'Spiller 1 snur først',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Spiller 2',
+  'player.one': 'Spiller 1',
   'openingTurn':
-      '{side} starter: snu en skjult brikke eller flytt en egen brikke hver tur.',
+      'Spiller 1 snur først en skjult brikke. Fargen som vises blir Spiller 1s side.',
   'adThenUndo': 'Trekket angres etter annonsen.',
   'undoingStatus': 'Angrer...',
   'undoRestoredOpening': 'Angret, tilbake til start. {next}',
@@ -2717,8 +3210,17 @@ const Map<String, String> _slovakStrings = <String, String>{
   'animal.7': 'Lev',
   'animal.8': 'Slon',
   'pieceLabel': 'Č. {rank} {animal}',
+  'firstFlipAssignment':
+      'Hráč 1 otočil {side} {piece}. Hráč 1 je {side}; Hráč 2 je {opponentSide}.',
+  'firstFlipToastMessage':
+      'Otočil(a) si figúrku {side}. V tejto hre si {side}; teraz hrá {nextPlayer}.',
+  'firstFlipToastTitle': 'Strana potvrdená',
+  'openingHeading': 'Hráč 1 otáča prvý',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Hráč 2',
+  'player.one': 'Hráč 1',
   'openingTurn':
-      '{side} začína: každý ťah otoč skrytú figúrku alebo pohni vlastnou.',
+      'Hráč 1 najprv otočí skrytú figúrku. Otočená farba sa stane jeho stranou.',
   'adThenUndo': 'Ťah sa vráti po reklame.',
   'undoingStatus': 'Vracanie...',
   'undoRestoredOpening': 'Vrátené, späť na začiatok. {next}',
@@ -2804,8 +3306,17 @@ const Map<String, String> _bulgarianStrings = <String, String>{
   'animal.7': 'Лъв',
   'animal.8': 'Слон',
   'pieceLabel': '№ {rank} {animal}',
+  'firstFlipAssignment':
+      'Играч 1 отвори {side} {piece}. Играч 1 е {side}; Играч 2 е {opponentSide}.',
+  'firstFlipToastMessage':
+      'Отвори фигура {side}. В тази игра си {side}; сега е ред на {nextPlayer}.',
+  'firstFlipToastTitle': 'Страната е определена',
+  'openingHeading': 'Играч 1 отваря първи',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'Играч 2',
+  'player.one': 'Играч 1',
   'openingTurn':
-      '{side} започват: на ход отвори скрита фигура или премести своя.',
+      'Играч 1 първо отваря скрита фигура. Откритият цвят става неговата страна.',
   'adThenUndo': 'Ходът ще бъде отменен след рекламата.',
   'undoingStatus': 'Отмяна...',
   'undoRestoredOpening': 'Отменено, връщане в началото. {next}',
@@ -2894,8 +3405,17 @@ const Map<String, String> _urduStrings = <String, String>{
   'animal.7': 'شیر',
   'animal.8': 'ہاتھی',
   'pieceLabel': 'نمبر {rank} {animal}',
+  'firstFlipAssignment':
+      'کھلاڑی 1 نے {side} {piece} کھولا۔ کھلاڑی 1 {side} ہے؛ کھلاڑی 2 {opponentSide} ہے۔',
+  'firstFlipToastMessage':
+      'آپ نے {side} مہرہ کھولا۔ اس کھیل میں آپ {side} ہیں؛ اب {nextPlayer} کی باری ہے۔',
+  'firstFlipToastTitle': 'رخ طے ہو گیا',
+  'openingHeading': 'کھلاڑی 1 پہلے کھولتا ہے',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'کھلاڑی 2',
+  'player.one': 'کھلاڑی 1',
   'openingTurn':
-      '{side} شروع کرتا ہے: ہر باری میں چھپا مہرہ کھولیں یا اپنا مہرہ چلائیں۔',
+      'کھلاڑی 1 پہلے ایک چھپا مہرہ کھولتا ہے۔ جو رنگ نکلے وہ کھلاڑی 1 کا رخ ہے۔',
   'adThenUndo': 'اشتہار کے بعد چال واپس ہو جائے گی۔',
   'undoingStatus': 'واپس کیا جا رہا ہے...',
   'undoRestoredOpening': 'واپس کر دیا، آغاز پر واپس۔ {next}',
@@ -2980,8 +3500,17 @@ const Map<String, String> _punjabiStrings = <String, String>{
   'animal.7': 'ਸ਼ੇਰ',
   'animal.8': 'ਹਾਥੀ',
   'pieceLabel': 'ਨੰ. {rank} {animal}',
+  'firstFlipAssignment':
+      'ਖਿਡਾਰੀ 1 ਨੇ {side} {piece} ਖੋਲ੍ਹਿਆ। ਖਿਡਾਰੀ 1 {side} ਹੈ; ਖਿਡਾਰੀ 2 {opponentSide} ਹੈ।',
+  'firstFlipToastMessage':
+      'ਤੁਸੀਂ {side} ਮੋਹਰਾ ਖੋਲ੍ਹਿਆ। ਇਸ ਖੇਡ ਵਿੱਚ ਤੁਸੀਂ {side} ਹੋ; ਹੁਣ {nextPlayer} ਦੀ ਵਾਰੀ ਹੈ।',
+  'firstFlipToastTitle': 'ਪਾਸਾ ਤੈਅ ਹੋ ਗਿਆ',
+  'openingHeading': 'ਖਿਡਾਰੀ 1 ਪਹਿਲਾਂ ਖੋਲ੍ਹਦਾ ਹੈ',
+  'playerSideLabel': '{player} ({side})',
+  'player.two': 'ਖਿਡਾਰੀ 2',
+  'player.one': 'ਖਿਡਾਰੀ 1',
   'openingTurn':
-      '{side} ਸ਼ੁਰੂ ਕਰਦਾ ਹੈ: ਹਰ ਵਾਰੀ ਛੁਪਿਆ ਮੋਹਰਾ ਖੋਲ੍ਹੋ ਜਾਂ ਆਪਣਾ ਮੋਹਰਾ ਚਲਾਓ।',
+      'ਖਿਡਾਰੀ 1 ਪਹਿਲਾਂ ਇੱਕ ਛੁਪਿਆ ਮੋਹਰਾ ਖੋਲ੍ਹਦਾ ਹੈ। ਨਿਕਲਿਆ ਰੰਗ ਖਿਡਾਰੀ 1 ਦਾ ਪਾਸਾ ਬਣਦਾ ਹੈ।',
   'adThenUndo': 'ਇਸ਼ਤਿਹਾਰ ਤੋਂ ਬਾਅਦ ਚਾਲ ਵਾਪਸ ਹੋਵੇਗੀ।',
   'undoingStatus': 'ਵਾਪਸ ਕੀਤਾ ਜਾ ਰਿਹਾ...',
   'undoRestoredOpening': 'ਵਾਪਸ ਹੋ ਗਿਆ, ਸ਼ੁਰੂਆਤ ਤੇ ਆ ਗਏ। {next}',

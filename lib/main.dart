@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:jungle_chess/game_ai.dart';
 import 'package:jungle_chess/game_audio_service.dart';
 import 'package:jungle_chess/jungle_localizations.dart';
 import 'package:jungle_chess/game_rules.dart';
@@ -122,6 +123,8 @@ class _JungleChessAppState extends State<JungleChessApp>
 
 enum _MoveDirection { up, down, left, right }
 
+enum GameMode { localTwoPlayer, vsComputer }
+
 const double _boardGap = 10;
 const String _deviceLanguageDropdownValue = 'device-language';
 
@@ -129,6 +132,7 @@ class _GameSnapshot {
   const _GameSnapshot({
     required this.board,
     required this.currentTurn,
+    required this.playerOneSide,
     required this.statusMessage,
     required this.winner,
     required this.isDraw,
@@ -137,6 +141,7 @@ class _GameSnapshot {
 
   final GameBoard board;
   final PieceSide currentTurn;
+  final PieceSide? playerOneSide;
   final _StatusMessage statusMessage;
   final PieceSide? winner;
   final bool isDraw;
@@ -196,6 +201,8 @@ class JungleChessPage extends StatefulWidget {
     this.initialTurn = PieceSide.red,
     this.languageCode = defaultLanguageCode,
     this.followsDeviceLanguage = false,
+    this.initialGameMode = GameMode.localTwoPlayer,
+    this.initialAiDifficulty = AiDifficulty.normal,
     this.onLanguageChanged,
     this.onUseDeviceLanguage,
   });
@@ -204,6 +211,8 @@ class JungleChessPage extends StatefulWidget {
   final PieceSide initialTurn;
   final String languageCode;
   final bool followsDeviceLanguage;
+  final GameMode initialGameMode;
+  final AiDifficulty initialAiDifficulty;
   final ValueChanged<String>? onLanguageChanged;
   final VoidCallback? onUseDeviceLanguage;
 
@@ -213,47 +222,80 @@ class JungleChessPage extends StatefulWidget {
 
 class _JungleChessPageState extends State<JungleChessPage> {
   static const int boardSize = JungleGameRules.boardSize;
+  static const Duration _firstFlipToastDuration = Duration(seconds: 5);
+  static const Duration _aiMoveDelay = Duration(milliseconds: 400);
 
   final Random _random = Random();
   final List<_GameSnapshot> _moveHistory = <_GameSnapshot>[];
   late List<List<GamePiece?>> _board;
   PieceSide _currentTurn = PieceSide.red;
+  PieceSide? _playerOneSide;
+  PieceSide? _firstFlipToastSide;
   BoardPosition? _selected;
   _StatusMessage _statusMessage = const _StatusMessage(_emptyStatusMessage);
   PieceSide? _winner;
+  late GameMode _gameMode;
+  late AiDifficulty _aiDifficulty;
   bool _isDraw = false;
   bool _soundEnabled = true;
   bool _undoInProgress = false;
   bool _showUndoAnimation = false;
+  bool _aiThinking = false;
   int _turnsWithoutCapture = 0;
+  int _aiTurnToken = 0;
+  Timer? _firstFlipToastTimer;
 
   JungleStrings get _strings => JungleStrings.forCode(widget.languageCode);
 
   @override
   void initState() {
     super.initState();
+    _gameMode = widget.initialGameMode;
+    _aiDifficulty = widget.initialAiDifficulty;
     GameAudioService.instance.enabled = _soundEnabled;
     _resetGame();
   }
 
+  @override
+  void dispose() {
+    _aiTurnToken++;
+    _firstFlipToastTimer?.cancel();
+    super.dispose();
+  }
+
   void _resetGame() {
+    _cancelFirstFlipToast();
+    _cancelAiTurn();
     final initialBoard = widget.initialBoard;
     if (initialBoard != null) {
       _board = _copyBoard(initialBoard);
       final initialTurn = widget.initialTurn;
+      final playerOneSide = _initialPlayerOneSide(initialBoard, initialTurn);
       setState(() {
         _moveHistory.clear();
         _currentTurn = initialTurn;
+        _playerOneSide = playerOneSide;
+        _firstFlipToastSide = null;
         _selected = null;
         _winner = null;
         _isDraw = false;
         _undoInProgress = false;
         _showUndoAnimation = false;
+        _aiThinking = false;
         _turnsWithoutCapture = 0;
-        _statusMessage = _StatusMessage(
-          (strings) => strings.openingTurn(initialTurn),
-        );
+        _statusMessage = playerOneSide == null
+            ? _StatusMessage((strings) => strings.openingTurn())
+            : _StatusMessage(
+                (strings) => strings.turnMessage(
+                  initialTurn,
+                  playerOneSide,
+                  0,
+                  JungleGameRules.nonCaptureDrawLimit,
+                  computerOpponent: _isVsComputer,
+                ),
+              );
       });
+      _queueAiTurnCheck();
       return;
     }
 
@@ -273,16 +315,18 @@ class _JungleChessPageState extends State<JungleChessPage> {
     setState(() {
       _moveHistory.clear();
       _currentTurn = PieceSide.red;
+      _playerOneSide = null;
+      _firstFlipToastSide = null;
       _selected = null;
       _winner = null;
       _isDraw = false;
       _undoInProgress = false;
       _showUndoAnimation = false;
+      _aiThinking = false;
       _turnsWithoutCapture = 0;
-      _statusMessage = _StatusMessage(
-        (strings) => strings.openingTurn(PieceSide.red),
-      );
+      _statusMessage = _StatusMessage((strings) => strings.openingTurn());
     });
+    _queueAiTurnCheck();
   }
 
   GameBoard _copyBoard(GameBoard board) {
@@ -291,7 +335,69 @@ class _JungleChessPageState extends State<JungleChessPage> {
     ];
   }
 
+  PieceSide? _initialPlayerOneSide(GameBoard board, PieceSide initialTurn) {
+    for (final row in board) {
+      for (final piece in row) {
+        if (piece != null && piece.revealed) {
+          return initialTurn;
+        }
+      }
+    }
+    return null;
+  }
+
   bool get _canUndo => _moveHistory.isNotEmpty;
+
+  bool get _isVsComputer => _gameMode == GameMode.vsComputer;
+
+  PieceSide? get _aiSide {
+    final playerOneSide = _playerOneSide;
+    if (!_isVsComputer || playerOneSide == null) {
+      return null;
+    }
+    return JungleGameRules.opposite(playerOneSide);
+  }
+
+  bool get _isAiTurn {
+    final aiSide = _aiSide;
+    return aiSide != null &&
+        _currentTurn == aiSide &&
+        _winner == null &&
+        !_isDraw;
+  }
+
+  bool get _blocksHumanInput => _undoInProgress || _aiThinking || _isAiTurn;
+
+  void _cancelAiTurn() {
+    _aiTurnToken++;
+    _aiThinking = false;
+  }
+
+  void _queueAiTurnCheck() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _scheduleAiTurnIfNeeded();
+    });
+  }
+
+  void _cancelFirstFlipToast() {
+    _firstFlipToastTimer?.cancel();
+    _firstFlipToastTimer = null;
+  }
+
+  void _scheduleFirstFlipToastDismiss() {
+    _cancelFirstFlipToast();
+    _firstFlipToastTimer = Timer(_firstFlipToastDuration, () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _firstFlipToastSide = null;
+      });
+    });
+  }
 
   Future<void> _onResetPressed() async {
     if (_winner != null || _isDraw) {
@@ -339,7 +445,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
   }
 
   Future<void> _onUndoPressed() async {
-    if (!_canUndo || _undoInProgress) {
+    if (!_canUndo || _undoInProgress || _aiThinking) {
       return;
     }
 
@@ -353,7 +459,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
         final strings = _strings;
         return AlertDialog(
           title: Text(strings.undoTitle),
-          content: Text(strings.undoContent),
+          content: Text(
+            _isVsComputer ? strings.undoContentComputer : strings.undoContent,
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -375,7 +483,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
   }
 
   Future<void> _undoMoveWithAd() async {
-    if (!_canUndo || _undoInProgress) {
+    if (!_canUndo || _undoInProgress || _aiThinking) {
       return;
     }
 
@@ -417,6 +525,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
       _GameSnapshot(
         board: _copyBoard(_board),
         currentTurn: _currentTurn,
+        playerOneSide: _playerOneSide,
         statusMessage: _statusMessage,
         winner: _winner,
         isDraw: _isDraw,
@@ -434,10 +543,19 @@ class _JungleChessPageState extends State<JungleChessPage> {
       return;
     }
 
-    final snapshot = _moveHistory.removeLast();
+    var snapshot = _moveHistory.removeLast();
+    if (_isVsComputer &&
+        _snapshotBelongsToAiTurn(snapshot) &&
+        _moveHistory.isNotEmpty) {
+      snapshot = _moveHistory.removeLast();
+    }
+    _cancelAiTurn();
+    _cancelFirstFlipToast();
     setState(() {
       _board = _copyBoard(snapshot.board);
       _currentTurn = snapshot.currentTurn;
+      _playerOneSide = snapshot.playerOneSide;
+      _firstFlipToastSide = null;
       _selected = null;
       _winner = snapshot.winner;
       _isDraw = snapshot.isDraw;
@@ -446,6 +564,14 @@ class _JungleChessPageState extends State<JungleChessPage> {
       _showUndoAnimation = false;
       _statusMessage = _undoStatusMessage(snapshot);
     });
+  }
+
+  bool _snapshotBelongsToAiTurn(_GameSnapshot snapshot) {
+    final playerOneSide = snapshot.playerOneSide;
+    if (playerOneSide == null) {
+      return false;
+    }
+    return snapshot.currentTurn == JungleGameRules.opposite(playerOneSide);
   }
 
   _StatusMessage _undoStatusMessage(_GameSnapshot snapshot) {
@@ -460,17 +586,49 @@ class _JungleChessPageState extends State<JungleChessPage> {
     }
 
     final turn = snapshot.currentTurn;
+    final playerOneSide = snapshot.playerOneSide;
     final turnsWithoutCapture = snapshot.turnsWithoutCapture;
     return _StatusMessage((strings) {
       return strings.undoRestored(
         opening: opening,
-        next: strings.undoTurn(
-          turn,
-          turnsWithoutCapture,
-          JungleGameRules.nonCaptureDrawLimit,
-        ),
+        next: playerOneSide == null
+            ? strings.openingTurn()
+            : strings.undoTurn(
+                turn,
+                playerOneSide,
+                turnsWithoutCapture,
+                JungleGameRules.nonCaptureDrawLimit,
+                computerOpponent: _isVsComputer,
+              ),
       );
     });
+  }
+
+  Future<bool> _confirmModeRestart(GameMode mode) async {
+    final strings = _strings;
+    final shouldRestart = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(strings.modeChangeTitle),
+          content: Text(
+            strings.modeChangeContent(strings.gameModeOption(mode.name)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(strings.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(strings.resetButton),
+            ),
+          ],
+        );
+      },
+    );
+
+    return mounted && shouldRestart == true;
   }
 
   Future<void> _showSettings() async {
@@ -478,6 +636,8 @@ class _JungleChessPageState extends State<JungleChessPage> {
         ? _deviceLanguageDropdownValue
         : widget.languageCode;
     var selectedLanguageCode = widget.languageCode;
+    var selectedGameMode = _gameMode;
+    var selectedAiDifficulty = _aiDifficulty;
     await showDialog<void>(
       context: context,
       builder: (context) {
@@ -505,6 +665,91 @@ class _JungleChessPageState extends State<JungleChessPage> {
                         });
                         setDialogState(() {});
                       },
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        strings.gameModeLabel,
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedButton<GameMode>(
+                      key: const ValueKey<String>('game-mode-segmented'),
+                      showSelectedIcon: false,
+                      segments: [
+                        ButtonSegment<GameMode>(
+                          value: GameMode.localTwoPlayer,
+                          label: Text(
+                            strings.gameModeOption(
+                              GameMode.localTwoPlayer.name,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          icon: const Icon(Icons.people_alt),
+                        ),
+                        ButtonSegment<GameMode>(
+                          value: GameMode.vsComputer,
+                          label: Text(
+                            strings.gameModeOption(GameMode.vsComputer.name),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          icon: const Icon(Icons.smart_toy),
+                        ),
+                      ],
+                      selected: <GameMode>{selectedGameMode},
+                      onSelectionChanged: (values) async {
+                        final nextMode = values.single;
+                        if (nextMode == _gameMode) {
+                          selectedGameMode = nextMode;
+                          setDialogState(() {});
+                          return;
+                        }
+                        final confirmed = await _confirmModeRestart(nextMode);
+                        if (!mounted || !confirmed) {
+                          setDialogState(() {
+                            selectedGameMode = _gameMode;
+                          });
+                          return;
+                        }
+                        selectedGameMode = nextMode;
+                        _gameMode = nextMode;
+                        _resetGame();
+                        setDialogState(() {});
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<AiDifficulty>(
+                      key: const ValueKey<String>('ai-difficulty-dropdown'),
+                      initialValue: selectedAiDifficulty,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: strings.aiDifficultyLabel,
+                        prefixIcon: const Icon(Icons.psychology),
+                        border: const OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final difficulty in AiDifficulty.values)
+                          DropdownMenuItem<AiDifficulty>(
+                            value: difficulty,
+                            child: Text(
+                              strings.aiDifficultyOption(difficulty.name),
+                            ),
+                          ),
+                      ],
+                      onChanged: selectedGameMode == GameMode.vsComputer
+                          ? (value) {
+                              if (value == null) {
+                                return;
+                              }
+                              selectedAiDifficulty = value;
+                              setState(() {
+                                _aiDifficulty = value;
+                              });
+                              setDialogState(() {});
+                            }
+                          : null,
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
@@ -566,12 +811,109 @@ class _JungleChessPageState extends State<JungleChessPage> {
     GameAudioService.instance.play(effect);
   }
 
+  void _scheduleAiTurnIfNeeded() {
+    if (!_isAiTurn || _aiThinking || _undoInProgress) {
+      return;
+    }
+
+    final token = ++_aiTurnToken;
+    setState(() {
+      _aiThinking = true;
+      _selected = null;
+      _statusMessage = _StatusMessage(
+        (strings) => strings.aiThinking(
+          _currentTurn,
+          _playerOneSide,
+          computerOpponent: _isVsComputer,
+        ),
+      );
+    });
+
+    Future<void>.delayed(_aiMoveDelay, () {
+      if (!mounted || token != _aiTurnToken || !_isAiTurn) {
+        return;
+      }
+      _performAiTurn();
+    });
+  }
+
+  void _performAiTurn() {
+    if (!_isAiTurn) {
+      setState(() {
+        _aiThinking = false;
+      });
+      return;
+    }
+
+    final state = AiGameState.fromBoard(
+      board: _board,
+      currentTurn: _currentTurn,
+      playerOneSide: _playerOneSide,
+      consecutiveNonCaptureTurns: _turnsWithoutCapture,
+    );
+    final action = JungleAi.chooseAction(
+      state: state,
+      difficulty: _aiDifficulty,
+      random: _random,
+    );
+    if (action == null) {
+      setState(() {
+        _aiThinking = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _aiThinking = false;
+    });
+    _applyGameAction(action);
+  }
+
+  void _applyGameAction(GameAction action) {
+    switch (action.kind) {
+      case GameActionKind.flip:
+        final piece = _board[action.to.row][action.to.col];
+        if (piece != null && !piece.revealed) {
+          _flipPiece(action.to, piece);
+        }
+      case GameActionKind.move || GameActionKind.capture:
+        final from = action.from;
+        if (from == null) {
+          return;
+        }
+        final attacker = _board[from.row][from.col];
+        if (attacker == null) {
+          return;
+        }
+        _tryMoveOrCapture(
+          from: from,
+          to: action.to,
+          attacker: attacker,
+          defender: _board[action.to.row][action.to.col],
+        );
+    }
+  }
+
   void _onCellTapped(BoardPosition position) {
-    if (_undoInProgress || _winner != null || _isDraw) {
+    if (_blocksHumanInput || _winner != null || _isDraw) {
       return;
     }
 
     final piece = _board[position.row][position.col];
+
+    if (_playerOneSide == null) {
+      if (piece != null && !piece.revealed) {
+        _flipPiece(position, piece);
+        return;
+      }
+
+      _playSound(GameSoundEffect.tap);
+      setState(() {
+        _selected = null;
+        _statusMessage = _StatusMessage((strings) => strings.openingTurn());
+      });
+      return;
+    }
 
     if (_selected == position) {
       _playSound(GameSoundEffect.tap);
@@ -586,11 +928,17 @@ class _JungleChessPageState extends State<JungleChessPage> {
 
     if (piece != null && piece.revealed && piece.side == _currentTurn) {
       final currentTurn = _currentTurn;
+      final playerOneSide = _playerOneSide;
       _playSound(GameSoundEffect.tap);
       setState(() {
         _selected = position;
         _statusMessage = _StatusMessage(
-          (strings) => strings.selectedPiece(currentTurn, piece),
+          (strings) => strings.selectedPiece(
+            currentTurn,
+            playerOneSide,
+            piece,
+            computerOpponent: _isVsComputer,
+          ),
         );
       });
       return;
@@ -632,17 +980,38 @@ class _JungleChessPageState extends State<JungleChessPage> {
   }
 
   void _flipPiece(BoardPosition position, GamePiece piece) {
-    final actor = _currentTurn;
+    final assigningPlayers = _playerOneSide == null;
+    final actor = assigningPlayers ? piece.side : _currentTurn;
+    final playerOneSide = _playerOneSide ?? piece.side;
     _playSound(GameSoundEffect.tap);
     _saveUndoSnapshot();
+    final actionMessage = _StatusMessage(
+      (strings) => assigningPlayers
+          ? strings.firstFlipAssignment(
+              piece.side,
+              piece,
+              computerOpponent: _isVsComputer,
+            )
+          : strings.flippedPiece(
+              actor,
+              playerOneSide,
+              piece.side,
+              piece,
+              computerOpponent: _isVsComputer,
+            ),
+    );
     setState(() {
       _board[position.row][position.col] = piece.copyWith(revealed: true);
+      _playerOneSide = playerOneSide;
+      _firstFlipToastSide = assigningPlayers ? piece.side : _firstFlipToastSide;
+      _currentTurn = actor;
       _selected = null;
-      _statusMessage = _StatusMessage(
-        (strings) => strings.flippedPiece(actor, piece.side, piece),
-      );
+      _statusMessage = actionMessage;
     });
-    _finishTurn(captured: false);
+    _finishTurn(captured: false, actionMessage: actionMessage, actor: actor);
+    if (assigningPlayers) {
+      _scheduleFirstFlipToastDismiss();
+    }
   }
 
   void _tryMoveOrCapture({
@@ -660,6 +1029,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
 
     if (defender == null) {
       final actor = _currentTurn;
+      final playerOneSide = _playerOneSide;
       _playSound(GameSoundEffect.move);
       _saveUndoSnapshot();
       setState(() {
@@ -667,7 +1037,12 @@ class _JungleChessPageState extends State<JungleChessPage> {
         _board[from.row][from.col] = null;
         _selected = null;
         _statusMessage = _StatusMessage(
-          (strings) => strings.movedToEmpty(actor, attacker),
+          (strings) => strings.movedToEmpty(
+            actor,
+            playerOneSide,
+            attacker,
+            computerOpponent: _isVsComputer,
+          ),
         );
       });
       _finishTurn(captured: false);
@@ -703,6 +1078,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
 
     final isMutualElimination = attacker.rank == defender.rank;
     final actor = _currentTurn;
+    final playerOneSide = _playerOneSide;
     final defenderSide = defender.side;
     _playSound(GameSoundEffect.capture);
     _saveUndoSnapshot();
@@ -710,17 +1086,21 @@ class _JungleChessPageState extends State<JungleChessPage> {
         ? _StatusMessage(
             (strings) => strings.mutualElimination(
               actor: actor,
+              playerOneSide: playerOneSide,
               attacker: attacker,
               defenderSide: defenderSide,
               defender: defender,
+              computerOpponent: _isVsComputer,
             ),
           )
         : _StatusMessage(
             (strings) => strings.capturedPiece(
               actor: actor,
+              playerOneSide: playerOneSide,
               attacker: attacker,
               defenderSide: defenderSide,
               defender: defender,
+              computerOpponent: _isVsComputer,
             ),
           );
     setState(() {
@@ -779,12 +1159,16 @@ class _JungleChessPageState extends State<JungleChessPage> {
         position.col < boardSize;
   }
 
-  void _finishTurn({required bool captured, _StatusMessage? actionMessage}) {
-    final actor = _currentTurn;
+  void _finishTurn({
+    required bool captured,
+    _StatusMessage? actionMessage,
+    PieceSide? actor,
+  }) {
+    final actingSide = actor ?? _currentTurn;
     final turnsWithoutCapture = captured ? 0 : _turnsWithoutCapture + 1;
     final outcome = JungleGameRules.evaluateAfterTurn(
       board: _board,
-      actor: actor,
+      actor: actingSide,
       consecutiveNonCaptureTurns: turnsWithoutCapture,
     );
 
@@ -795,6 +1179,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
         _selected = null;
         _statusMessage = _drawMessage(outcome.reason);
       });
+      _cancelAiTurn();
       return;
     }
 
@@ -806,10 +1191,11 @@ class _JungleChessPageState extends State<JungleChessPage> {
         _selected = null;
         _statusMessage = _winnerMessage(winner, outcome.reason);
       });
+      _cancelAiTurn();
       return;
     }
 
-    final nextTurn = JungleGameRules.opposite(actor);
+    final nextTurn = JungleGameRules.opposite(actingSide);
     setState(() {
       _currentTurn = nextTurn;
       _turnsWithoutCapture = turnsWithoutCapture;
@@ -817,9 +1203,10 @@ class _JungleChessPageState extends State<JungleChessPage> {
         nextTurn: _currentTurn,
         turnsWithoutCapture: _turnsWithoutCapture,
         actionMessage: actionMessage,
-        captureActor: captured ? actor : null,
+        captureActor: captured ? actingSide : null,
       );
     });
+    _scheduleAiTurnIfNeeded();
   }
 
   int _remainingCount(PieceSide side) {
@@ -827,7 +1214,15 @@ class _JungleChessPageState extends State<JungleChessPage> {
   }
 
   _StatusMessage _winnerMessage(PieceSide winner, GameEndReason? reason) {
-    return _StatusMessage((strings) => strings.winnerMessage(winner, reason));
+    final playerOneSide = _playerOneSide;
+    return _StatusMessage(
+      (strings) => strings.winnerMessage(
+        winner,
+        playerOneSide,
+        reason,
+        computerOpponent: _isVsComputer,
+      ),
+    );
   }
 
   _StatusMessage _drawMessage(GameEndReason? reason) {
@@ -843,14 +1238,30 @@ class _JungleChessPageState extends State<JungleChessPage> {
     _StatusMessage? actionMessage,
     PieceSide? captureActor,
   }) {
-    if (actionMessage == null || captureActor == null) {
+    final playerOneSide = _playerOneSide;
+    if (actionMessage == null) {
       return _StatusMessage(
         (strings) => strings.turnMessage(
           nextTurn,
+          playerOneSide,
           turnsWithoutCapture,
           JungleGameRules.nonCaptureDrawLimit,
+          computerOpponent: _isVsComputer,
         ),
       );
+    }
+
+    if (captureActor == null) {
+      return _StatusMessage((strings) {
+        final turn = strings.turnMessage(
+          nextTurn,
+          playerOneSide,
+          turnsWithoutCapture,
+          JungleGameRules.nonCaptureDrawLimit,
+          computerOpponent: _isVsComputer,
+        );
+        return '${actionMessage.resolve(strings)}\n$turn';
+      });
     }
 
     final opponent = JungleGameRules.opposite(captureActor);
@@ -858,14 +1269,18 @@ class _JungleChessPageState extends State<JungleChessPage> {
     return _StatusMessage((strings) {
       final turn = strings.turnMessage(
         nextTurn,
+        playerOneSide,
         turnsWithoutCapture,
         JungleGameRules.nonCaptureDrawLimit,
+        computerOpponent: _isVsComputer,
       );
       return strings.remainingAfterCapture(
         action: actionMessage.resolve(strings),
         opponent: opponent,
+        playerOneSide: playerOneSide,
         remaining: remaining,
         turn: turn,
+        computerOpponent: _isVsComputer,
       );
     });
   }
@@ -893,27 +1308,151 @@ class _JungleChessPageState extends State<JungleChessPage> {
           IconButton(
             tooltip: strings.settingsTooltip,
             icon: const Icon(Icons.settings),
-            onPressed: _showSettings,
+            onPressed: _aiThinking ? null : _showSettings,
           ),
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildStatusCard(),
-                  const SizedBox(height: 16),
-                  _buildBoard(strings),
-                  const SizedBox(height: 12),
-                  _buildSideCounters(),
-                  const SizedBox(height: 16),
-                  _buildRulesCard(strings),
-                ],
+        child: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildStatusCard(),
+                      const SizedBox(height: 16),
+                      _buildBoard(strings),
+                      const SizedBox(height: 12),
+                      _buildSideCounters(),
+                      const SizedBox(height: 16),
+                      _buildRulesCard(strings),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (_firstFlipToastSide != null) _buildFirstFlipToast(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFirstFlipToast() {
+    final strings = _strings;
+    final side = _firstFlipToastSide!;
+    final sideColor = side == PieceSide.red
+        ? const Color(0xFFC44536)
+        : const Color(0xFF1E6FBA);
+
+    return Positioned(
+      key: const ValueKey<String>('first-flip-toast'),
+      top: 14,
+      left: 16,
+      right: 16,
+      child: IgnorePointer(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value,
+                  child: Transform.translate(
+                    offset: Offset(0, -18 * (1 - value)),
+                    child: child,
+                  ),
+                );
+              },
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBF6),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: sideColor.withValues(alpha: 0.22)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 22,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Container(width: 7, color: sideColor),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: sideColor.withValues(alpha: 0.12),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.flag_rounded,
+                                    color: sideColor,
+                                    size: 22,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        strings.firstFlipToastTitle(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: sideColor,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        strings.firstFlipToastMessage(
+                                          side,
+                                          computerOpponent: _isVsComputer,
+                                        ),
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Color(0xFF3F332B),
+                                          fontSize: 14,
+                                          height: 1.35,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -924,15 +1463,27 @@ class _JungleChessPageState extends State<JungleChessPage> {
 
   Widget _buildStatusCard() {
     final strings = _strings;
-    final turnColor = _currentTurn == PieceSide.red
+    final turnColor = _playerOneSide == null
+        ? const Color(0xFF7A593F)
+        : _currentTurn == PieceSide.red
         ? const Color(0xFFC44536)
         : const Color(0xFF1E6FBA);
     final statusLineHeight = MediaQuery.textScalerOf(context).scale(16) * 1.5;
     final heading = _winner != null
-        ? strings.victoryHeading(_winner!)
+        ? strings.victoryHeading(
+            _winner!,
+            _playerOneSide,
+            computerOpponent: _isVsComputer,
+          )
         : _isDraw
         ? strings.drawHeading
-        : strings.currentTurn(_currentTurn);
+        : _playerOneSide == null
+        ? strings.openingHeading
+        : strings.currentTurn(
+            _currentTurn,
+            _playerOneSide,
+            computerOpponent: _isVsComputer,
+          );
 
     return Card(
       elevation: 1,
@@ -1003,7 +1554,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
             message: _canUndo ? strings.undoButton : strings.undoUnavailable,
             child: OutlinedButton.icon(
               key: const ValueKey<String>('undo-button'),
-              onPressed: _canUndo && !_undoInProgress ? _onUndoPressed : null,
+              onPressed: _canUndo && !_undoInProgress && !_aiThinking
+                  ? _onUndoPressed
+                  : null,
               icon: const Icon(Icons.undo),
               label: Text(strings.undoButton, overflow: TextOverflow.ellipsis),
             ),
@@ -1013,7 +1566,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
         Flexible(
           child: FilledButton.icon(
             key: const ValueKey<String>('reset-button'),
-            onPressed: _undoInProgress ? null : _onResetPressed,
+            onPressed: _undoInProgress || _aiThinking ? null : _onResetPressed,
             icon: const Icon(Icons.refresh),
             label: Text(strings.resetButton, overflow: TextOverflow.ellipsis),
           ),
@@ -1059,7 +1612,11 @@ class _JungleChessPageState extends State<JungleChessPage> {
       child: Column(
         children: [
           Text(
-            strings.sideRemaining(side),
+            strings.sideRemaining(
+              side,
+              _playerOneSide,
+              computerOpponent: _isVsComputer,
+            ),
             style: TextStyle(color: color, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
@@ -1121,6 +1678,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
                 selected: _selected!,
                 directions: _availableMoveDirections(_selected!),
               ),
+            if (_aiThinking) _buildAiThinkingOverlay(),
             if (_showUndoAnimation) _buildUndoAnimationOverlay(),
             if (_winner != null || _isDraw) _buildGameOverOverlay(),
           ],
@@ -1194,11 +1752,65 @@ class _JungleChessPageState extends State<JungleChessPage> {
     );
   }
 
+  Widget _buildAiThinkingOverlay() {
+    final strings = _strings;
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Container(
+          key: const ValueKey<String>('ai-thinking-overlay'),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.24),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBF6),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 14,
+                    offset: Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.smart_toy, color: Color(0xFF1E6FBA)),
+                  const SizedBox(width: 10),
+                  Text(
+                    strings.aiThinking(
+                      _currentTurn,
+                      _playerOneSide,
+                      computerOpponent: _isVsComputer,
+                    ),
+                    style: const TextStyle(
+                      color: Color(0xFF3F332B),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildGameOverOverlay() {
     final strings = _strings;
     final label = _winner == null
         ? strings.drawHeading
-        : strings.gameOverWinner(_winner!);
+        : strings.gameOverWinner(
+            _winner!,
+            _playerOneSide,
+            computerOpponent: _isVsComputer,
+          );
     final accentColor = _winner == PieceSide.blue
         ? const Color(0xFF76B7FF)
         : const Color(0xFFFFA39A);
