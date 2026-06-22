@@ -109,6 +109,7 @@ class JungleStrings {
     return JungleStrings._(AppLanguage.byCode(normalized), <String, String>{
       ..._englishStrings,
       ...(_localizedStrings[normalized] ?? const <String, String>{}),
+      ...(_localizedPlayerStrings[normalized] ?? const <String, String>{}),
     });
   }
 
@@ -128,6 +129,10 @@ class JungleStrings {
   String get resetTitle => _lookup('resetTitle');
   String get resetContent => _lookup('resetContent');
   String get continueGame => _lookup('continueGame');
+  String get backTooltip => _lookup('backTooltip');
+  String get backTitle => _lookup('backTitle');
+  String get backContent => _lookup('backContent');
+  String get backConfirm => _lookup('backConfirm');
   String get undoButton => _lookup('undoButton');
   String get undoUnavailable => _lookup('undoUnavailable');
   String get undoTitle => _lookup('undoTitle');
@@ -470,12 +475,40 @@ class JungleStrings {
     bool computerOpponent = false,
   }) {
     return _format(_lookup('currentTurn'), <String, String>{
-      'side': playerSideLabel(
+      'side': currentTurnSide(
         side,
         playerOneSide,
         computerOpponent: computerOpponent,
       ),
     });
+  }
+
+  String currentTurnPrefix() => _currentTurnTemplatePart(beforeSide: true);
+
+  String currentTurnSuffix() => _currentTurnTemplatePart(beforeSide: false);
+
+  String currentTurnSide(
+    PieceSide side,
+    PieceSide? playerOneSide, {
+    bool computerOpponent = false,
+  }) {
+    return playerSideLabel(
+      side,
+      playerOneSide,
+      computerOpponent: computerOpponent,
+    );
+  }
+
+  String _currentTurnTemplatePart({required bool beforeSide}) {
+    final template = _lookup('currentTurn');
+    const placeholder = '{side}';
+    final placeholderIndex = template.indexOf(placeholder);
+    if (placeholderIndex == -1) {
+      return beforeSide ? template : '';
+    }
+    return beforeSide
+        ? template.substring(0, placeholderIndex)
+        : template.substring(placeholderIndex + placeholder.length);
   }
 
   String victoryHeading(
@@ -570,6 +603,11 @@ const Map<String, String> _englishStrings = <String, String>{
   'resetTitle': 'Restart?',
   'resetContent': 'The current game will be cleared.',
   'continueGame': 'Keep playing',
+  'backTooltip': 'Back',
+  'backTitle': 'Back to match selection?',
+  'backContent':
+      'The current game will end, and you will choose Two players or Computer again.',
+  'backConfirm': 'Back',
   'undoButton': 'Undo',
   'undoUnavailable': 'Already at the opening',
   'undoTitle': 'Confirm undo?',
@@ -692,6 +730,10 @@ const Map<String, String> _chineseStrings = <String, String>{
   'resetTitle': '重新开始？',
   'resetContent': '当前棋局会被清空。',
   'continueGame': '继续游戏',
+  'backTooltip': '返回',
+  'backTitle': '返回选择对局？',
+  'backContent': '当前棋局会结束，并返回选择本地双人或人机对战。',
+  'backConfirm': '返回',
   'undoButton': '悔棋',
   'undoUnavailable': '已经是开局',
   'undoTitle': '确认悔棋？',
@@ -3611,3 +3653,36 @@ const Map<String, Map<String, String>> _localizedStrings =
       'vi': _vietnameseStrings,
       'ko': _koreanStrings,
     };
+
+const Map<String, Map<String, String>>
+_localizedPlayerStrings = <String, Map<String, String>>{
+  'es': <String, String>{'player.you': 'Tú', 'player.computer': 'Computadora'},
+  'fr': <String, String>{'player.you': 'Vous', 'player.computer': 'Ordinateur'},
+  'de': <String, String>{'player.you': 'Du', 'player.computer': 'Computer'},
+  'it': <String, String>{'player.you': 'Tu', 'player.computer': 'Computer'},
+  'pt': <String, String>{'player.you': 'Você', 'player.computer': 'Computador'},
+  'nl': <String, String>{'player.you': 'Jij', 'player.computer': 'Computer'},
+  'pl': <String, String>{'player.you': 'Ty', 'player.computer': 'Komputer'},
+  'ro': <String, String>{'player.you': 'Tu', 'player.computer': 'Computer'},
+  'ru': <String, String>{'player.you': 'Вы', 'player.computer': 'Компьютер'},
+  'uk': <String, String>{'player.you': 'Ви', 'player.computer': 'Комп’ютер'},
+  'tr': <String, String>{'player.you': 'Sen', 'player.computer': 'Bilgisayar'},
+  'el': <String, String>{'player.you': 'Εσύ', 'player.computer': 'Υπολογιστής'},
+  'sv': <String, String>{'player.you': 'Du', 'player.computer': 'Dator'},
+  'cs': <String, String>{'player.you': 'Ty', 'player.computer': 'Počítač'},
+  'hu': <String, String>{'player.you': 'Te', 'player.computer': 'Számítógép'},
+  'da': <String, String>{'player.you': 'Du', 'player.computer': 'Computer'},
+  'fi': <String, String>{'player.you': 'Sinä', 'player.computer': 'Tietokone'},
+  'no': <String, String>{'player.you': 'Du', 'player.computer': 'Datamaskin'},
+  'sk': <String, String>{'player.you': 'Ty', 'player.computer': 'Počítač'},
+  'bg': <String, String>{'player.you': 'Ти', 'player.computer': 'Компютър'},
+  'hi': <String, String>{'player.you': 'आप', 'player.computer': 'कंप्यूटर'},
+  'ar': <String, String>{'player.you': 'أنت', 'player.computer': 'الكمبيوتر'},
+  'bn': <String, String>{'player.you': 'আপনি', 'player.computer': 'কম্পিউটার'},
+  'ur': <String, String>{'player.you': 'آپ', 'player.computer': 'کمپیوٹر'},
+  'id': <String, String>{'player.you': 'Kamu', 'player.computer': 'Komputer'},
+  'ja': <String, String>{'player.you': 'あなた', 'player.computer': 'コンピューター'},
+  'pa': <String, String>{'player.you': 'ਤੁਸੀਂ', 'player.computer': 'ਕੰਪਿਊਟਰ'},
+  'vi': <String, String>{'player.you': 'Bạn', 'player.computer': 'Máy tính'},
+  'ko': <String, String>{'player.you': '당신', 'player.computer': '컴퓨터'},
+};

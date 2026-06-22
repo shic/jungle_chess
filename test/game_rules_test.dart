@@ -389,6 +389,55 @@ void main() {
         ),
       );
     });
+
+    test('hard AI moves an elephant before an adjacent rat can take it', () {
+      final board = emptyBoard()
+        ..[0][0] = piece(PieceSide.red, 4, revealed: false)
+        ..[1][1] = piece(PieceSide.red, 8)
+        ..[1][2] = piece(PieceSide.blue, 1)
+        ..[3][3] = piece(PieceSide.blue, 5, revealed: false);
+
+      final action = JungleAi.chooseAction(
+        state: AiGameState.fromBoard(
+          board: board,
+          currentTurn: PieceSide.red,
+          playerOneSide: PieceSide.red,
+        ),
+        difficulty: AiDifficulty.hard,
+        random: Random(7),
+      );
+
+      expect(action?.kind, GameActionKind.move);
+      expect(action?.from, const BoardPosition(1, 1));
+    });
+
+    test('hard AI avoids a capture that lets a rat recapture elephant', () {
+      final board = emptyBoard()
+        ..[1][1] = piece(PieceSide.red, 8)
+        ..[1][2] = piece(PieceSide.blue, 7)
+        ..[1][3] = piece(PieceSide.blue, 1)
+        ..[3][0] = piece(PieceSide.red, 2);
+
+      final action = JungleAi.chooseAction(
+        state: AiGameState.fromBoard(
+          board: board,
+          currentTurn: PieceSide.red,
+          playerOneSide: PieceSide.red,
+        ),
+        difficulty: AiDifficulty.hard,
+        random: Random(3),
+      );
+
+      expect(
+        action,
+        isNot(
+          const GameAction.capture(
+            from: BoardPosition(1, 1),
+            to: BoardPosition(1, 2),
+          ),
+        ),
+      );
+    });
   });
 }
 

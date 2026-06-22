@@ -78,8 +78,9 @@ class JungleAi {
   const JungleAi._();
 
   static const int repeatMoveLimit = 3;
-  static const int _hardDepth = 3;
-  static const int _hardNodeLimit = 650;
+  static const int _hardDepth = 4;
+  static const int _hardNodeLimit = 3200;
+  static const int _hardBranchLimit = 16;
 
   static GameAction? chooseAction({
     required AiGameState state,
@@ -110,6 +111,8 @@ class JungleAi {
           state.currentTurn,
           _hardDepth,
           _SearchBudget(_hardNodeLimit),
+          double.negativeInfinity,
+          double.infinity,
         ),
       ),
     };
@@ -242,17 +245,29 @@ class JungleAi {
     PieceSide rootSide,
     int depth,
     _SearchBudget budget,
+    double alpha,
+    double beta,
   ) {
     if (!budget.take()) {
       return _evaluate(state, rootSide);
     }
 
     if (action.kind == GameActionKind.flip) {
-      return _expectedFlipValue(state, action, rootSide, depth, budget);
+      final value = _expectedFlipValue(
+        state,
+        action,
+        rootSide,
+        depth,
+        budget,
+        alpha,
+        beta,
+      );
+      return value + _actionSafetyAdjustment(state, null, action, rootSide);
     }
 
     final next = _applyKnownAction(state, action);
-    return _search(next, rootSide, depth - 1, budget);
+    return _search(next, rootSide, depth - 1, budget, alpha, beta) +
+        _actionSafetyAdjustment(state, next, action, rootSide);
   }
 
   static double _search(
@@ -260,6 +275,8 @@ class JungleAi {
     PieceSide rootSide,
     int depth,
     _SearchBudget budget,
+    double alpha,
+    double beta,
   ) {
     if (!budget.take() || depth <= 0) {
       return _evaluate(state, rootSide);
@@ -275,21 +292,30 @@ class JungleAi {
       return state.currentTurn == rootSide ? -9000 : 9000;
     }
 
-    final ordered = <GameAction>[...actions]
-      ..sort((a, b) {
-        final aScore = _scoreImmediate(state, a, state.currentTurn);
-        final bScore = _scoreImmediate(state, b, state.currentTurn);
-        return bScore.compareTo(aScore);
-      });
-    final candidates = ordered.take(12);
+    final candidates = _orderedCandidates(
+      state,
+      actions,
+    ).take(_hardBranchLimit);
 
     if (state.currentTurn == rootSide) {
       var best = double.negativeInfinity;
       for (final action in candidates) {
         best = max(
           best,
-          _expectedActionValue(state, action, rootSide, depth, budget),
+          _expectedActionValue(
+            state,
+            action,
+            rootSide,
+            depth,
+            budget,
+            alpha,
+            beta,
+          ),
         );
+        alpha = max(alpha, best);
+        if (alpha >= beta || budget.exhausted) {
+          break;
+        }
       }
       return best;
     }
@@ -298,8 +324,20 @@ class JungleAi {
     for (final action in candidates) {
       worst = min(
         worst,
-        _expectedActionValue(state, action, rootSide, depth, budget),
+        _expectedActionValue(
+          state,
+          action,
+          rootSide,
+          depth,
+          budget,
+          alpha,
+          beta,
+        ),
       );
+      beta = min(beta, worst);
+      if (beta <= alpha || budget.exhausted) {
+        break;
+      }
     }
     return worst;
   }
@@ -310,6 +348,8 @@ class JungleAi {
     PieceSide rootSide,
     int depth,
     _SearchBudget budget,
+    double alpha,
+    double beta,
   ) {
     if (state.hiddenPool.isEmpty) {
       return _evaluate(state, rootSide);
@@ -323,7 +363,7 @@ class JungleAi {
       final next = _applyHypotheticalFlip(state, action.to, piece);
       final value = depth <= 1
           ? _evaluate(next, rootSide)
-          : _search(next, rootSide, depth - 1, budget);
+          : _search(next, rootSide, depth - 1, budget, alpha, beta);
       totalWeight += count;
       totalScore += value * count;
       if (budget.exhausted) {
@@ -335,6 +375,52 @@ class JungleAi {
       return _evaluate(state, rootSide);
     }
     return totalScore / totalWeight + _flipPositionScore(state, action.to);
+  }
+
+  static List<GameAction> _orderedCandidates(
+    AiGameState state,
+    Iterable<GameAction> actions,
+  ) {
+    return <GameAction>[...actions]..sort((a, b) {
+      final scoreComparison = _scoreImmediate(
+        state,
+        b,
+        state.currentTurn,
+      ).compareTo(_scoreImmediate(state, a, state.currentTurn));
+      if (scoreComparison != 0) {
+        return scoreComparison;
+      }
+      return _actionPriority(a).compareTo(_actionPriority(b));
+    });
+  }
+
+  static int _actionPriority(GameAction action) {
+    return switch (action.kind) {
+      GameActionKind.capture => 0,
+      GameActionKind.move => 1,
+      GameActionKind.flip => 2,
+    };
+  }
+
+  static double _actionSafetyAdjustment(
+    AiGameState before,
+    AiGameState? after,
+    GameAction action,
+    PieceSide rootSide,
+  ) {
+    final actor = before.currentTurn;
+    final adjustment = switch (action.kind) {
+      GameActionKind.flip =>
+        -_exposurePenalty(before, actor) * 1.25 -
+            _capturePressureScore(before, actor) * 0.45,
+      GameActionKind.move || GameActionKind.capture =>
+        (_exposurePenalty(before, actor) - _exposurePenalty(after!, actor)) *
+                1.4 +
+            (_capturePressureScore(after, actor) -
+                    _capturePressureScore(before, actor)) *
+                0.45,
+    };
+    return actor == rootSide ? adjustment : -adjustment;
   }
 
   static AiGameState _applyKnownAction(AiGameState state, GameAction action) {
@@ -420,20 +506,33 @@ class JungleAi {
       case GameActionKind.move:
         final from = action.from!;
         final piece = state.visibleBoard[from.row][from.col]!;
+        final next = _applyKnownAction(state, action);
         score += _centerScore(action.to) - _centerScore(from);
         score += piece.rank * 0.2;
-        score -= _exposurePenalty(_applyKnownAction(state, action), side);
+        score +=
+            (_exposurePenalty(state, side) - _exposurePenalty(next, side)) *
+            1.1;
+        score +=
+            (_capturePressureScore(next, side) -
+                _capturePressureScore(state, side)) *
+            0.8;
+        score -=
+            _capturePressureScore(next, JungleGameRules.opposite(side)) * 0.4;
+        score += _evaluate(next, side) * 0.08;
       case GameActionKind.capture:
         final from = action.from!;
         final attacker = state.visibleBoard[from.row][from.col]!;
-        final defender = state.visibleBoard[action.to.row][action.to.col]!;
-        score += _pieceValue(defender) * 7;
-        if (attacker.rank == defender.rank) {
-          score -= _pieceValue(attacker) * 3;
+        final next = _applyKnownAction(state, action);
+        score += _captureExchangeValue(state, action) * 6;
+        if (next.visibleBoard[action.to.row][action.to.col] == attacker) {
+          score += _centerScore(action.to) * 0.4;
         }
-        score -= _exposurePenalty(_applyKnownAction(state, action), side);
+        score +=
+            (_exposurePenalty(state, side) - _exposurePenalty(next, side)) *
+            0.7;
+        score += _evaluate(next, side) * 0.08;
     }
-    return score + _evaluate(state, side) * 0.05;
+    return score + _evaluate(state, side) * 0.03;
   }
 
   static double? _terminalScoreAfter(
@@ -488,8 +587,10 @@ class JungleAi {
 
     score += _mobility(state, rootSide) * 1.4;
     score -= _mobility(state, opponent) * 1.4;
+    score += _capturePressureScore(state, rootSide) * 1.6;
+    score -= _capturePressureScore(state, opponent) * 1.6;
     score -= _exposurePenalty(state, rootSide);
-    score += _exposurePenalty(state, opponent) * 0.6;
+    score += _exposurePenalty(state, opponent) * 0.85;
     return score;
   }
 
@@ -532,18 +633,113 @@ class JungleAi {
           continue;
         }
         final from = BoardPosition(row, col);
+        var worstThreat = 0.0;
         for (final to in JungleGameRules.adjacentPositions(from)) {
           final attacker = state.visibleBoard[to.row][to.col];
           if (attacker == null || attacker.side == side) {
             continue;
           }
           if (JungleGameRules.canCapture(attacker: attacker, defender: piece)) {
-            penalty += _pieceValue(piece) * 1.25;
+            var threat = _pieceValue(piece);
+            if (piece.rank == attacker.rank) {
+              threat -= _pieceValue(attacker) * 0.55;
+            }
+            if (_canRecaptureAt(state, from, attacker)) {
+              threat -= _pieceValue(attacker) * 0.35;
+            }
+            worstThreat = max(worstThreat, threat);
           }
         }
+        penalty += max(0, worstThreat) * 1.35;
       }
     }
     return penalty;
+  }
+
+  static double _capturePressureScore(AiGameState state, PieceSide side) {
+    var score = 0.0;
+    for (var row = 0; row < JungleGameRules.boardSize; row++) {
+      for (var col = 0; col < JungleGameRules.boardSize; col++) {
+        final piece = state.visibleBoard[row][col];
+        if (piece == null || piece.side != side) {
+          continue;
+        }
+        final from = BoardPosition(row, col);
+        for (final to in JungleGameRules.adjacentPositions(from)) {
+          final target = state.visibleBoard[to.row][to.col];
+          if (target == null || target.side == side) {
+            continue;
+          }
+          if (!JungleGameRules.canCapture(attacker: piece, defender: target)) {
+            continue;
+          }
+          var value = _pieceValue(target);
+          if (piece.rank == target.rank) {
+            value -= _pieceValue(piece) * 0.65;
+          } else if (_canRecaptureAt(state, to, piece)) {
+            value -= _pieceValue(piece) * 0.45;
+          }
+          score += max(0, value);
+        }
+      }
+    }
+    return score;
+  }
+
+  static double _captureExchangeValue(AiGameState state, GameAction action) {
+    final from = action.from!;
+    final attacker = state.visibleBoard[from.row][from.col]!;
+    final defender = state.visibleBoard[action.to.row][action.to.col]!;
+    var value = _pieceValue(defender);
+
+    if (attacker.rank == defender.rank) {
+      value -= _pieceValue(attacker) * 0.8;
+      return value;
+    }
+
+    final next = _applyKnownAction(state, action);
+    if (_isThreatened(next, action.to, attacker.side)) {
+      value -= _pieceValue(attacker) * 0.95;
+    }
+    return value;
+  }
+
+  static bool _isThreatened(
+    AiGameState state,
+    BoardPosition position,
+    PieceSide side,
+  ) {
+    final piece = state.visibleBoard[position.row][position.col];
+    if (piece == null || piece.side != side) {
+      return false;
+    }
+    for (final adjacent in JungleGameRules.adjacentPositions(position)) {
+      final attacker = state.visibleBoard[adjacent.row][adjacent.col];
+      if (attacker == null || attacker.side == side) {
+        continue;
+      }
+      if (JungleGameRules.canCapture(attacker: attacker, defender: piece)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _canRecaptureAt(
+    AiGameState state,
+    BoardPosition position,
+    GamePiece capturedBy,
+  ) {
+    for (final adjacent in JungleGameRules.adjacentPositions(position)) {
+      final piece = state.visibleBoard[adjacent.row][adjacent.col];
+      if (piece == null || piece.side == capturedBy.side) {
+        continue;
+      }
+      if (JungleGameRules.canCapture(attacker: piece, defender: capturedBy)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   static double _expectedHiddenSwing(AiGameState state, PieceSide side) {

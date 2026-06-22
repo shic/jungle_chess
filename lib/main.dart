@@ -242,6 +242,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
   bool _isDraw = false;
   bool _soundEnabled = true;
   late bool _modeSelected;
+  bool _choosingComputerDifficulty = false;
   bool _undoInProgress = false;
   bool _showUndoAnimation = false;
   bool _aiThinking = false;
@@ -451,10 +452,61 @@ class _JungleChessPageState extends State<JungleChessPage> {
     _resetGame();
   }
 
+  Future<void> _onBackToModeSelectionPressed() async {
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final strings = _strings;
+        return AlertDialog(
+          title: Text(strings.backTitle),
+          content: Text(strings.backContent),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(strings.continueGame),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(strings.backConfirm),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || shouldLeave != true) {
+      return;
+    }
+    _returnToModeSelection();
+  }
+
+  void _returnToModeSelection() {
+    _cancelFirstFlipToast();
+    _cancelAiTurn();
+    setState(() {
+      _moveHistory.clear();
+      _recentAiActions.clear();
+      _currentTurn = PieceSide.red;
+      _playerOneSide = null;
+      _firstFlipToastSide = null;
+      _selected = null;
+      _winner = null;
+      _isDraw = false;
+      _undoInProgress = false;
+      _showUndoAnimation = false;
+      _aiThinking = false;
+      _turnsWithoutCapture = 0;
+      _modeSelected = false;
+      _choosingComputerDifficulty = false;
+      _statusMessage = _StatusMessage((strings) => strings.openingTurn());
+    });
+  }
+
   void _startGame(GameMode mode, {AiDifficulty? difficulty}) {
     _gameMode = mode;
     _aiDifficulty = difficulty ?? _aiDifficulty;
     _modeSelected = true;
+    _choosingComputerDifficulty = false;
     _resetGame();
   }
 
@@ -1340,6 +1392,16 @@ class _JungleChessPageState extends State<JungleChessPage> {
     final strings = _strings;
     return Scaffold(
       appBar: AppBar(
+        leading: _modeSelected
+            ? IconButton(
+                key: const ValueKey<String>('game-back-button'),
+                tooltip: strings.backTooltip,
+                icon: const Icon(Icons.arrow_back),
+                onPressed: _undoInProgress
+                    ? null
+                    : _onBackToModeSelectionPressed,
+              )
+            : null,
         title: Text(strings.appTitle),
         centerTitle: true,
         actions: [
@@ -1352,6 +1414,8 @@ class _JungleChessPageState extends State<JungleChessPage> {
       ),
       body: _modeSelected
           ? _buildGameBody(strings)
+          : _choosingComputerDifficulty
+          ? _buildComputerDifficultySelection(strings)
           : _buildModeSelection(strings),
     );
   }
@@ -1434,41 +1498,135 @@ class _JungleChessPageState extends State<JungleChessPage> {
                   title: strings.gameModeOption(GameMode.vsComputer.name),
                   description: strings.vsComputerDescription,
                   filled: true,
-                  onPressed: () => _startGame(
-                    GameMode.vsComputer,
-                    difficulty: _aiDifficulty,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                DropdownButtonFormField<AiDifficulty>(
-                  key: const ValueKey<String>('mode-selection-ai-difficulty'),
-                  initialValue: _aiDifficulty,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: strings.aiDifficultyLabel,
-                    prefixIcon: const Icon(Icons.psychology),
-                    border: const OutlineInputBorder(),
-                  ),
-                  items: [
-                    for (final difficulty in AiDifficulty.values)
-                      DropdownMenuItem<AiDifficulty>(
-                        value: difficulty,
-                        child: Text(
-                          strings.aiDifficultyOption(difficulty.name),
-                        ),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
+                  onPressed: () {
                     setState(() {
-                      _aiDifficulty = value;
+                      _gameMode = GameMode.vsComputer;
+                      _choosingComputerDifficulty = true;
                     });
                   },
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComputerDifficultySelection(JungleStrings strings) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: IconButton(
+                    key: const ValueKey<String>('back-to-mode-selection'),
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).backButtonTooltip,
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () {
+                      setState(() {
+                        _choosingComputerDifficulty = false;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Icon(
+                  Icons.smart_toy,
+                  size: 42,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  strings.gameModeOption(GameMode.vsComputer.name),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  strings.aiDifficultyLabel,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: const Color(0xFF5E5046),
+                    height: 1.35,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                for (final difficulty in AiDifficulty.values) ...[
+                  _buildDifficultyChoiceButton(
+                    difficulty: difficulty,
+                    title: strings.aiDifficultyOption(difficulty.name),
+                  ),
+                  if (difficulty != AiDifficulty.values.last)
+                    const SizedBox(height: 14),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDifficultyChoiceButton({
+    required AiDifficulty difficulty,
+    required String title,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final selected = difficulty == _aiDifficulty;
+    final foregroundColor = selected
+        ? colorScheme.onPrimary
+        : colorScheme.primary;
+
+    return Material(
+      key: ValueKey<String>('start-vs-computer-${difficulty.name}'),
+      color: selected ? colorScheme.primary : Colors.white,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _startGame(GameMode.vsComputer, difficulty: difficulty),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected
+                  ? colorScheme.primary
+                  : colorScheme.outline.withValues(alpha: 0.45),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selected ? Icons.check_circle : Icons.psychology,
+                color: foregroundColor,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foregroundColor,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Icon(Icons.arrow_forward, color: foregroundColor),
+            ],
           ),
         ),
       ),
@@ -1687,6 +1845,8 @@ class _JungleChessPageState extends State<JungleChessPage> {
         ? const Color(0xFFC44536)
         : const Color(0xFF1E6FBA);
     final statusLineHeight = MediaQuery.textScalerOf(context).scale(16) * 1.5;
+    final isCurrentTurnHeading =
+        _winner == null && !_isDraw && _playerOneSide != null;
     final heading = _winner != null
         ? strings.victoryHeading(
             _winner!,
@@ -1695,13 +1855,8 @@ class _JungleChessPageState extends State<JungleChessPage> {
           )
         : _isDraw
         ? strings.drawHeading
-        : _playerOneSide == null
-        ? strings.openingHeading
-        : strings.currentTurn(
-            _currentTurn,
-            _playerOneSide,
-            computerOpponent: _isVsComputer,
-          );
+        : strings.openingHeading;
+    const headingStyle = TextStyle(fontSize: 22, fontWeight: FontWeight.w700);
 
     return Card(
       elevation: 1,
@@ -1728,15 +1883,35 @@ class _JungleChessPageState extends State<JungleChessPage> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text(
-                        heading,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      child: isCurrentTurnHeading
+                          ? Text.rich(
+                              TextSpan(
+                                style: headingStyle,
+                                children: [
+                                  TextSpan(text: strings.currentTurnPrefix()),
+                                  TextSpan(
+                                    text: strings.currentTurnSide(
+                                      _currentTurn,
+                                      _playerOneSide,
+                                      computerOpponent: _isVsComputer,
+                                    ),
+                                    style: TextStyle(color: turnColor),
+                                  ),
+                                  TextSpan(text: strings.currentTurnSuffix()),
+                                ],
+                              ),
+                              key: const ValueKey<String>(
+                                'current-turn-heading',
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            )
+                          : Text(
+                              heading,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: headingStyle,
+                            ),
                     ),
                   ],
                 ),
@@ -1972,6 +2147,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
 
   Widget _buildAiThinkingOverlay() {
     final strings = _strings;
+    final sideColor = _currentTurn == PieceSide.red
+        ? const Color(0xFFC44536)
+        : const Color(0xFF1E6FBA);
     return Positioned.fill(
       child: IgnorePointer(
         child: Container(
@@ -1997,7 +2175,11 @@ class _JungleChessPageState extends State<JungleChessPage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.smart_toy, color: Color(0xFF1E6FBA)),
+                  Icon(
+                    Icons.smart_toy,
+                    key: const ValueKey<String>('ai-thinking-icon'),
+                    color: sideColor,
+                  ),
                   const SizedBox(width: 10),
                   Text(
                     strings.aiThinking(

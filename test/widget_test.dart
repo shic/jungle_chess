@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jungle_chess/game_ai.dart';
 import 'package:jungle_chess/game_rules.dart';
+import 'package:jungle_chess/jungle_localizations.dart';
 import 'package:jungle_chess/main.dart';
 
 const String _chineseLanguageCode = 'zh';
@@ -17,7 +18,7 @@ void main() {
     expect(find.text('选择对局'), findsOneWidget);
     expect(find.text('本地双人'), findsOneWidget);
     expect(find.text('人机对战'), findsOneWidget);
-    expect(find.text('电脑难度'), findsOneWidget);
+    expect(find.text('电脑难度'), findsNothing);
     expect(find.byKey(const ValueKey<String>('board-cell-0-0')), findsNothing);
 
     await _startLocalTwoPlayerGame(tester);
@@ -34,20 +35,57 @@ void main() {
       const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('mode-selection-ai-difficulty')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('困难').last);
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey<String>('start-vs-computer')));
     await tester.pumpAndSettle();
 
+    expect(find.text('电脑难度'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('board-cell-0-0')), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('start-vs-computer-easy')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('start-vs-computer-normal')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('start-vs-computer-hard')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('start-vs-computer-hard')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('电脑难度'), findsNothing);
     expect(find.text('玩家1先翻棋'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('board-cell-0-0')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('returns from computer difficulty selection to mode selection', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('start-vs-computer')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('电脑难度'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('back-to-mode-selection')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('选择对局'), findsOneWidget);
+    expect(find.text('电脑难度'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('board-cell-0-0')), findsNothing);
   });
 
   testWidgets('uses the supported device language on first launch', (
@@ -89,6 +127,58 @@ void main() {
     expect(find.text('Animal Kings'), findsOneWidget);
     expect(find.text('重新开始'), findsOneWidget);
     expect(find.text('规则说明'), findsOneWidget);
+  });
+
+  testWidgets('asks before returning from the game board to mode selection', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
+    await _startLocalTwoPlayerGame(tester);
+
+    await tester.tap(find.byKey(const ValueKey<String>('game-back-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('返回选择对局？'), findsOneWidget);
+    expect(find.text('当前棋局会结束，并返回选择本地双人或人机对战。'), findsOneWidget);
+    expect(find.text('继续游戏'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, '返回'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('继续游戏'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('返回选择对局？'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('board-cell-0-0')),
+      findsOneWidget,
+    );
+    expect(find.text('选择对局'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey<String>('game-back-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, '返回'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('选择对局'), findsOneWidget);
+    expect(find.text('本地双人'), findsOneWidget);
+    expect(find.text('人机对战'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('game-back-button')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey<String>('board-cell-0-0')), findsNothing);
   });
 
   testWidgets('keeps status heading readable beside undo actions on phones', (
@@ -374,7 +464,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('?'), findsOneWidget);
-      expect(find.text('当前回合：玩家1（红方）'), findsOneWidget);
+      expect(_currentTurnText('当前回合：玩家1（红方）'), findsOneWidget);
       expect(tester.widget<OutlinedButton>(undoButton).onPressed, isNull);
     },
   );
@@ -395,13 +485,13 @@ void main() {
     );
 
     expect(find.text('玩家1先翻棋'), findsOneWidget);
-    expect(find.text('当前回合：红方'), findsNothing);
+    expect(_currentTurnText('当前回合：红方'), findsNothing);
     expect(find.text('红方先手：每回合可以翻一张牌，或者移动一枚自己的棋子。'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey<String>('board-cell-0-0')));
     await tester.pumpAndSettle();
 
-    expect(find.text('当前回合：玩家2（蓝方）'), findsOneWidget);
+    expect(_currentTurnText('当前回合：玩家2（蓝方）'), findsOneWidget);
     expect(find.textContaining('玩家1翻出了红方 8号象'), findsOneWidget);
     expect(find.textContaining('玩家1是红方，玩家2是蓝方'), findsOneWidget);
     expect(
@@ -410,6 +500,51 @@ void main() {
     );
     expect(find.text('阵营已确定'), findsOneWidget);
     expect(find.text('你翻出了红方棋子，本局你执红方。现在轮到玩家2（蓝方）。'), findsOneWidget);
+  });
+
+  testWidgets('colors localized current-turn player label by side', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: JungleChessPage(
+          languageCode: 'it',
+          initialBoard: hiddenOpeningBoard(
+            first: const GamePiece(side: PieceSide.red, rank: 8),
+            second: const GamePiece(side: PieceSide.blue, rank: 2),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('board-cell-0-0')));
+    await tester.pumpAndSettle();
+
+    expect(
+      _currentTurnText('Turno attuale: Giocatore 2 (Blu)'),
+      findsOneWidget,
+    );
+    expect(
+      _currentTurnSideSpan(tester, 'Giocatore 2 (Blu)').style?.color,
+      const Color(0xFF1E6FBA),
+    );
+  });
+
+  test('localizes computer-mode current-turn player labels', () {
+    final strings = JungleStrings.forCode('it');
+
+    expect(
+      strings.currentTurn(PieceSide.red, PieceSide.red, computerOpponent: true),
+      'Turno attuale: Tu (Rosso)',
+    );
+    expect(
+      strings.currentTurn(
+        PieceSide.blue,
+        PieceSide.red,
+        computerOpponent: true,
+      ),
+      'Turno attuale: Computer (Blu)',
+    );
   });
 
   testWidgets('keeps first flip toast visible for five seconds', (
@@ -471,7 +606,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('board-cell-0-0')));
     await tester.pumpAndSettle();
 
-    expect(find.text('当前回合：玩家2（红方）'), findsOneWidget);
+    expect(_currentTurnText('当前回合：玩家2（红方）'), findsOneWidget);
     expect(find.textContaining('玩家1翻出了蓝方 2号猫'), findsOneWidget);
     expect(find.textContaining('玩家1是蓝方，玩家2是红方'), findsOneWidget);
   });
@@ -494,12 +629,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('board-cell-0-0')));
     await tester.pumpAndSettle();
 
-    expect(find.text('当前回合：玩家2（蓝方）'), findsOneWidget);
+    expect(_currentTurnText('当前回合：玩家2（蓝方）'), findsOneWidget);
 
     await _confirmUndo(tester);
 
     expect(find.text('玩家1先翻棋'), findsOneWidget);
-    expect(find.text('当前回合：玩家2（蓝方）'), findsNothing);
+    expect(_currentTurnText('当前回合：玩家2（蓝方）'), findsNothing);
     expect(find.text('?'), findsNWidgets(2));
   });
 
@@ -527,6 +662,14 @@ void main() {
         find.byKey(const ValueKey<String>('ai-thinking-overlay')),
         findsOneWidget,
       );
+      expect(
+        tester
+            .widget<Icon>(
+              find.byKey(const ValueKey<String>('ai-thinking-icon')),
+            )
+            .color,
+        const Color(0xFF1E6FBA),
+      );
       expect(find.text('?'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey<String>('board-cell-0-1')));
@@ -542,9 +685,44 @@ void main() {
         findsNothing,
       );
       expect(find.text('2'), findsOneWidget);
-      expect(find.text('当前回合：你（红方）'), findsOneWidget);
+      expect(_currentTurnText('当前回合：你（红方）'), findsOneWidget);
     },
   );
+
+  testWidgets('computer thinking icon follows the computer side color', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: JungleChessPage(
+          languageCode: _chineseLanguageCode,
+          initialGameMode: GameMode.vsComputer,
+          initialAiDifficulty: AiDifficulty.easy,
+          initialBoard: hiddenOpeningBoard(
+            first: const GamePiece(side: PieceSide.blue, rank: 2),
+            second: const GamePiece(side: PieceSide.red, rank: 8),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('board-cell-0-0')));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('ai-thinking-overlay')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Icon>(find.byKey(const ValueKey<String>('ai-thinking-icon')))
+          .color,
+      const Color(0xFFC44536),
+    );
+
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump();
+  });
 
   testWidgets('computer mode undo rolls back a full player-computer round', (
     tester,
@@ -612,18 +790,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('?'), findsNothing);
-    expect(find.text('当前回合：玩家1（红方）'), findsOneWidget);
+    expect(_currentTurnText('当前回合：玩家1（红方）'), findsOneWidget);
 
     await _confirmUndo(tester);
 
     expect(find.text('?'), findsOneWidget);
-    expect(find.text('当前回合：玩家2（蓝方）'), findsOneWidget);
+    expect(_currentTurnText('当前回合：玩家2（蓝方）'), findsOneWidget);
     expect(tester.widget<OutlinedButton>(undoButton).onPressed, isNotNull);
 
     await _confirmUndo(tester);
 
     expect(find.text('?'), findsOneWidget);
-    expect(find.text('当前回合：玩家1（红方）'), findsOneWidget);
+    expect(_currentTurnText('当前回合：玩家1（红方）'), findsOneWidget);
     expect(tester.widget<OutlinedButton>(undoButton).onPressed, isNull);
   });
 
@@ -749,7 +927,7 @@ void main() {
 
     expect(find.text('重新开始？'), findsNothing);
     expect(find.text('玩家1（红方）赢'), findsNothing);
-    expect(find.text('当前回合：玩家1（红方）'), findsOneWidget);
+    expect(_currentTurnText('当前回合：玩家1（红方）'), findsOneWidget);
   });
 
   testWidgets('explains when captured piece was not the last hidden piece', (
@@ -834,4 +1012,18 @@ Future<void> _startLocalTwoPlayerGame(WidgetTester tester) async {
     find.byKey(const ValueKey<String>('start-local-two-player')),
   );
   await tester.pumpAndSettle();
+}
+
+Finder _currentTurnText(String text) {
+  return find.text(text, findRichText: true);
+}
+
+TextSpan _currentTurnSideSpan(WidgetTester tester, String sideText) {
+  final heading = tester.widget<Text>(
+    find.byKey(const ValueKey<String>('current-turn-heading')),
+  );
+  final span = heading.textSpan! as TextSpan;
+  return span.children!.whereType<TextSpan>().firstWhere(
+    (child) => child.text == sideText,
+  );
 }
