@@ -137,6 +137,7 @@ class _GameSnapshot {
     required this.winner,
     required this.isDraw,
     required this.turnsWithoutCapture,
+    required this.recentAiActions,
   });
 
   final GameBoard board;
@@ -146,6 +147,7 @@ class _GameSnapshot {
   final PieceSide? winner;
   final bool isDraw;
   final int turnsWithoutCapture;
+  final List<GameAction> recentAiActions;
 }
 
 class _StatusMessage {
@@ -227,6 +229,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
 
   final Random _random = Random();
   final List<_GameSnapshot> _moveHistory = <_GameSnapshot>[];
+  final List<GameAction> _recentAiActions = <GameAction>[];
   late List<List<GamePiece?>> _board;
   PieceSide _currentTurn = PieceSide.red;
   PieceSide? _playerOneSide;
@@ -238,6 +241,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
   late AiDifficulty _aiDifficulty;
   bool _isDraw = false;
   bool _soundEnabled = true;
+  late bool _modeSelected;
   bool _undoInProgress = false;
   bool _showUndoAnimation = false;
   bool _aiThinking = false;
@@ -252,6 +256,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
     super.initState();
     _gameMode = widget.initialGameMode;
     _aiDifficulty = widget.initialAiDifficulty;
+    _modeSelected = widget.initialBoard != null;
     GameAudioService.instance.enabled = _soundEnabled;
     _resetGame();
   }
@@ -273,6 +278,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
       final playerOneSide = _initialPlayerOneSide(initialBoard, initialTurn);
       setState(() {
         _moveHistory.clear();
+        _recentAiActions.clear();
         _currentTurn = initialTurn;
         _playerOneSide = playerOneSide;
         _firstFlipToastSide = null;
@@ -314,6 +320,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
 
     setState(() {
       _moveHistory.clear();
+      _recentAiActions.clear();
       _currentTurn = PieceSide.red;
       _playerOneSide = null;
       _firstFlipToastSide = null;
@@ -444,6 +451,13 @@ class _JungleChessPageState extends State<JungleChessPage> {
     _resetGame();
   }
 
+  void _startGame(GameMode mode, {AiDifficulty? difficulty}) {
+    _gameMode = mode;
+    _aiDifficulty = difficulty ?? _aiDifficulty;
+    _modeSelected = true;
+    _resetGame();
+  }
+
   Future<void> _onUndoPressed() async {
     if (!_canUndo || _undoInProgress || _aiThinking) {
       return;
@@ -530,6 +544,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
         winner: _winner,
         isDraw: _isDraw,
         turnsWithoutCapture: _turnsWithoutCapture,
+        recentAiActions: List<GameAction>.unmodifiable(_recentAiActions),
       ),
     );
   }
@@ -553,6 +568,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
     _cancelFirstFlipToast();
     setState(() {
       _board = _copyBoard(snapshot.board);
+      _recentAiActions
+        ..clear()
+        ..addAll(snapshot.recentAiActions);
       _currentTurn = snapshot.currentTurn;
       _playerOneSide = snapshot.playerOneSide;
       _firstFlipToastSide = null;
@@ -706,6 +724,14 @@ class _JungleChessPageState extends State<JungleChessPage> {
                           setDialogState(() {});
                           return;
                         }
+                        if (!_modeSelected) {
+                          selectedGameMode = nextMode;
+                          setState(() {
+                            _gameMode = nextMode;
+                          });
+                          setDialogState(() {});
+                          return;
+                        }
                         final confirmed = await _confirmModeRestart(nextMode);
                         if (!mounted || !confirmed) {
                           setDialogState(() {
@@ -855,6 +881,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
       state: state,
       difficulty: _aiDifficulty,
       random: _random,
+      recentActions: _recentAiActions,
     );
     if (action == null) {
       setState(() {
@@ -867,6 +894,17 @@ class _JungleChessPageState extends State<JungleChessPage> {
       _aiThinking = false;
     });
     _applyGameAction(action);
+    _rememberAiAction(action);
+  }
+
+  void _rememberAiAction(GameAction action) {
+    _recentAiActions.add(action);
+    if (_recentAiActions.length > JungleAi.repeatMoveLimit) {
+      _recentAiActions.removeRange(
+        0,
+        _recentAiActions.length - JungleAi.repeatMoveLimit,
+      );
+    }
   }
 
   void _applyGameAction(GameAction action) {
@@ -1312,31 +1350,211 @@ class _JungleChessPageState extends State<JungleChessPage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 520),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildStatusCard(),
-                      const SizedBox(height: 16),
-                      _buildBoard(strings),
-                      const SizedBox(height: 12),
-                      _buildSideCounters(),
-                      const SizedBox(height: 16),
-                      _buildRulesCard(strings),
-                    ],
-                  ),
+      body: _modeSelected
+          ? _buildGameBody(strings)
+          : _buildModeSelection(strings),
+    );
+  }
+
+  Widget _buildGameBody(JungleStrings strings) {
+    return SafeArea(
+      child: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildStatusCard(),
+                    const SizedBox(height: 16),
+                    _buildBoard(strings),
+                    const SizedBox(height: 12),
+                    _buildSideCounters(),
+                    const SizedBox(height: 16),
+                    _buildRulesCard(strings),
+                  ],
                 ),
               ),
             ),
-            if (_firstFlipToastSide != null) _buildFirstFlipToast(),
-          ],
+          ),
+          if (_firstFlipToastSide != null) _buildFirstFlipToast(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeSelection(JungleStrings strings) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 18),
+                Icon(
+                  Icons.grid_view_rounded,
+                  size: 42,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  strings.modeSelectionTitle,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  strings.modeSelectionSubtitle,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: const Color(0xFF5E5046),
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                _buildModeChoiceButton(
+                  key: const ValueKey<String>('start-local-two-player'),
+                  icon: Icons.people_alt,
+                  title: strings.gameModeOption(GameMode.localTwoPlayer.name),
+                  description: strings.localTwoPlayerDescription,
+                  onPressed: () => _startGame(GameMode.localTwoPlayer),
+                ),
+                const SizedBox(height: 14),
+                _buildModeChoiceButton(
+                  key: const ValueKey<String>('start-vs-computer'),
+                  icon: Icons.smart_toy,
+                  title: strings.gameModeOption(GameMode.vsComputer.name),
+                  description: strings.vsComputerDescription,
+                  filled: true,
+                  onPressed: () => _startGame(
+                    GameMode.vsComputer,
+                    difficulty: _aiDifficulty,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                DropdownButtonFormField<AiDifficulty>(
+                  key: const ValueKey<String>('mode-selection-ai-difficulty'),
+                  initialValue: _aiDifficulty,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: strings.aiDifficultyLabel,
+                    prefixIcon: const Icon(Icons.psychology),
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final difficulty in AiDifficulty.values)
+                      DropdownMenuItem<AiDifficulty>(
+                        value: difficulty,
+                        child: Text(
+                          strings.aiDifficultyOption(difficulty.name),
+                        ),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) {
+                      return;
+                    }
+                    setState(() {
+                      _aiDifficulty = value;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModeChoiceButton({
+    required Key key,
+    required IconData icon,
+    required String title,
+    required String description,
+    required VoidCallback onPressed,
+    bool filled = false,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final backgroundColor = filled ? colorScheme.primary : Colors.white;
+    final foregroundColor = filled
+        ? colorScheme.onPrimary
+        : colorScheme.primary;
+    final descriptionColor = filled
+        ? colorScheme.onPrimary.withValues(alpha: 0.82)
+        : const Color(0xFF5E5046);
+
+    return Material(
+      key: key,
+      color: backgroundColor,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onPressed,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: filled
+                  ? colorScheme.primary
+                  : colorScheme.outline.withValues(alpha: 0.45),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: foregroundColor.withValues(alpha: filled ? 0.16 : 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: foregroundColor),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: foregroundColor,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: descriptionColor,
+                        fontSize: 14,
+                        height: 1.3,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(Icons.arrow_forward, color: foregroundColor),
+            ],
+          ),
         ),
       ),
     );

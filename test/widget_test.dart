@@ -9,6 +9,47 @@ import 'package:jungle_chess/main.dart';
 const String _chineseLanguageCode = 'zh';
 
 void main() {
+  testWidgets('renders mode selection on first launch', (tester) async {
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
+
+    expect(find.text('选择对局'), findsOneWidget);
+    expect(find.text('本地双人'), findsOneWidget);
+    expect(find.text('人机对战'), findsOneWidget);
+    expect(find.text('电脑难度'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('board-cell-0-0')), findsNothing);
+
+    await _startLocalTwoPlayerGame(tester);
+
+    expect(find.text('玩家1先翻棋'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('board-cell-0-0')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('starts computer mode from the selection screen', (tester) async {
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('mode-selection-ai-difficulty')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('困难').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('start-vs-computer')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('玩家1先翻棋'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('board-cell-0-0')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('uses the supported device language on first launch', (
     tester,
   ) async {
@@ -18,6 +59,7 @@ void main() {
     addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
 
     await tester.pumpWidget(const JungleChessApp());
+    await _startLocalTwoPlayerGame(tester);
 
     expect(find.text('Ricomincia'), findsOneWidget);
     expect(find.text('Regole'), findsOneWidget);
@@ -32,6 +74,7 @@ void main() {
     addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
 
     await tester.pumpWidget(const JungleChessApp());
+    await _startLocalTwoPlayerGame(tester);
 
     expect(find.text('Restart'), findsOneWidget);
     expect(find.text('Rules'), findsOneWidget);
@@ -41,6 +84,7 @@ void main() {
     await tester.pumpWidget(
       const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
     );
+    await _startLocalTwoPlayerGame(tester);
 
     expect(find.text('Animal Kings'), findsOneWidget);
     expect(find.text('重新开始'), findsOneWidget);
@@ -58,6 +102,7 @@ void main() {
     await tester.pumpWidget(
       const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
     );
+    await _startLocalTwoPlayerGame(tester);
 
     final heading = find.text('玩家1先翻棋');
     expect(heading, findsOneWidget);
@@ -88,6 +133,7 @@ void main() {
     await tester.pumpWidget(
       const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
     );
+    await _startLocalTwoPlayerGame(tester);
 
     final boardBottom = tester
         .getBottomLeft(find.byKey(const ValueKey<String>('board-cell-3-0')))
@@ -111,6 +157,7 @@ void main() {
     await tester.pumpWidget(
       const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
     );
+    await _startLocalTwoPlayerGame(tester);
 
     await tester.tap(find.byKey(const ValueKey<String>('reset-button')));
     await tester.pumpAndSettle();
@@ -176,6 +223,7 @@ void main() {
 
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
+    await _startLocalTwoPlayerGame(tester);
 
     expect(find.text('Restart'), findsOneWidget);
     expect(find.text('Rules'), findsOneWidget);
@@ -187,6 +235,7 @@ void main() {
     await tester.pumpWidget(
       const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
     );
+    await _startLocalTwoPlayerGame(tester);
 
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
@@ -234,6 +283,7 @@ void main() {
     addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
 
     await tester.pumpWidget(const JungleChessApp());
+    await _startLocalTwoPlayerGame(tester);
 
     expect(find.text('Ricomincia'), findsOneWidget);
     expect(find.text('Regole'), findsOneWidget);
@@ -776,5 +826,12 @@ Future<void> _confirmUndo(WidgetTester tester) async {
   await tester.tap(find.widgetWithText(FilledButton, '观看广告并悔棋'));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 900));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _startLocalTwoPlayerGame(WidgetTester tester) async {
+  await tester.tap(
+    find.byKey(const ValueKey<String>('start-local-two-player')),
+  );
   await tester.pumpAndSettle();
 }

@@ -1,6 +1,9 @@
 // Regression coverage for capture hierarchy and end-of-game rule evaluation.
 
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jungle_chess/game_ai.dart';
 import 'package:jungle_chess/game_rules.dart';
 
 void main() {
@@ -42,6 +45,133 @@ void main() {
         isTrue,
       );
     });
+  });
+
+  group('game actions', () {
+    test('unassigned opening can only flip hidden pieces', () {
+      final board = emptyBoard()
+        ..[0][0] = piece(PieceSide.red, 8, revealed: false)
+        ..[0][1] = piece(PieceSide.blue, 2, revealed: false)
+        ..[1][1] = piece(PieceSide.red, 3);
+
+      final actions = JungleGameRules.legalActionsFor(
+        board: board,
+        currentTurn: PieceSide.red,
+      );
+
+      expect(
+        actions,
+        unorderedEquals(<GameAction>[
+          const GameAction.flip(BoardPosition(0, 0)),
+          const GameAction.flip(BoardPosition(0, 1)),
+        ]),
+      );
+    });
+
+    test('assigned turns include flips, empty moves, and legal captures', () {
+      final board = emptyBoard()
+        ..[1][1] = piece(PieceSide.red, 8)
+        ..[1][2] = piece(PieceSide.blue, 2)
+        ..[0][1] = piece(PieceSide.red, 3)
+        ..[2][1] = piece(PieceSide.blue, 4, revealed: false);
+
+      final actions = JungleGameRules.legalActionsFor(
+        board: board,
+        currentTurn: PieceSide.red,
+        playerOneSide: PieceSide.red,
+      );
+
+      expect(actions, contains(const GameAction.flip(BoardPosition(2, 1))));
+      expect(
+        actions,
+        contains(
+          const GameAction.capture(
+            from: BoardPosition(1, 1),
+            to: BoardPosition(1, 2),
+          ),
+        ),
+      );
+      expect(
+        actions,
+        contains(
+          const GameAction.move(
+            from: BoardPosition(1, 1),
+            to: BoardPosition(1, 0),
+          ),
+        ),
+      );
+      expect(
+        actions,
+        isNot(
+          contains(
+            const GameAction.move(
+              from: BoardPosition(1, 1),
+              to: BoardPosition(2, 1),
+            ),
+          ),
+        ),
+      );
+      expect(
+        actions,
+        isNot(
+          contains(
+            const GameAction.capture(
+              from: BoardPosition(1, 1),
+              to: BoardPosition(0, 1),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('rat-elephant special rule is represented in legal actions', () {
+      final board = emptyBoard()
+        ..[0][0] = piece(PieceSide.red, 1)
+        ..[0][1] = piece(PieceSide.blue, 8);
+
+      final actions = JungleGameRules.legalActionsFor(
+        board: board,
+        currentTurn: PieceSide.red,
+        playerOneSide: PieceSide.red,
+      );
+
+      expect(
+        actions,
+        contains(
+          const GameAction.capture(
+            from: BoardPosition(0, 0),
+            to: BoardPosition(0, 1),
+          ),
+        ),
+      );
+    });
+
+    test(
+      'pure action simulation captures without mutating the source board',
+      () {
+        final board = emptyBoard()
+          ..[0][0] = piece(PieceSide.red, 4)
+          ..[0][1] = piece(PieceSide.blue, 4);
+
+        final result = JungleGameRules.applyAction(
+          board: board,
+          action: const GameAction.capture(
+            from: BoardPosition(0, 0),
+            to: BoardPosition(0, 1),
+          ),
+          currentTurn: PieceSide.red,
+          playerOneSide: PieceSide.red,
+          consecutiveNonCaptureTurns: 7,
+        );
+
+        expect(result.captured, isTrue);
+        expect(result.consecutiveNonCaptureTurns, 0);
+        expect(result.board[0][0], isNull);
+        expect(result.board[0][1], isNull);
+        expect(board[0][0], isNotNull);
+        expect(board[0][1], isNotNull);
+      },
+    );
   });
 
   group('win condition', () {
@@ -112,6 +242,152 @@ void main() {
       );
 
       expect(outcome.isFinished, isFalse);
+    });
+  });
+
+  group('local AI', () {
+    test('AI state does not bind hidden identities to hidden positions', () {
+      final firstBoard = emptyBoard()
+        ..[0][0] = piece(PieceSide.red, 8)
+        ..[3][3] = piece(PieceSide.blue, 2)
+        ..[0][1] = piece(PieceSide.red, 1, revealed: false)
+        ..[1][0] = piece(PieceSide.blue, 7, revealed: false);
+      final secondBoard = emptyBoard()
+        ..[0][0] = piece(PieceSide.red, 8)
+        ..[3][3] = piece(PieceSide.blue, 2)
+        ..[0][1] = piece(PieceSide.blue, 7, revealed: false)
+        ..[1][0] = piece(PieceSide.red, 1, revealed: false);
+
+      final firstAction = JungleAi.chooseAction(
+        state: AiGameState.fromBoard(
+          board: firstBoard,
+          currentTurn: PieceSide.blue,
+          playerOneSide: PieceSide.red,
+        ),
+        difficulty: AiDifficulty.hard,
+        random: Random(4),
+      );
+      final secondAction = JungleAi.chooseAction(
+        state: AiGameState.fromBoard(
+          board: secondBoard,
+          currentTurn: PieceSide.blue,
+          playerOneSide: PieceSide.red,
+        ),
+        difficulty: AiDifficulty.hard,
+        random: Random(4),
+      );
+
+      expect(secondAction, firstAction);
+    });
+
+    test('easy AI only returns legal actions', () {
+      final board = emptyBoard()
+        ..[0][0] = piece(PieceSide.red, 8)
+        ..[0][1] = piece(PieceSide.blue, 2)
+        ..[1][0] = piece(PieceSide.blue, 5, revealed: false);
+      final legalActions = JungleGameRules.legalActionsFor(
+        board: board,
+        currentTurn: PieceSide.red,
+        playerOneSide: PieceSide.red,
+      );
+
+      for (var seed = 0; seed < 20; seed++) {
+        final action = JungleAi.chooseAction(
+          state: AiGameState.fromBoard(
+            board: board,
+            currentTurn: PieceSide.red,
+            playerOneSide: PieceSide.red,
+          ),
+          difficulty: AiDifficulty.easy,
+          random: Random(seed),
+        );
+
+        expect(legalActions, contains(action));
+      }
+    });
+
+    test('normal AI chooses an immediate winning capture', () {
+      final board = emptyBoard()
+        ..[0][0] = piece(PieceSide.red, 8)
+        ..[0][1] = piece(PieceSide.blue, 2);
+
+      final action = JungleAi.chooseAction(
+        state: AiGameState.fromBoard(
+          board: board,
+          currentTurn: PieceSide.red,
+          playerOneSide: PieceSide.red,
+        ),
+        difficulty: AiDifficulty.normal,
+        random: Random(1),
+      );
+
+      expect(
+        action,
+        const GameAction.capture(
+          from: BoardPosition(0, 0),
+          to: BoardPosition(0, 1),
+        ),
+      );
+    });
+
+    test('AI avoids a fourth repeated back-and-forth move', () {
+      final board = emptyBoard()
+        ..[1][2] = piece(PieceSide.blue, 7)
+        ..[3][3] = piece(PieceSide.red, 8);
+      const blockedRepeat = GameAction.move(
+        from: BoardPosition(1, 2),
+        to: BoardPosition(1, 1),
+      );
+      final legalActions = JungleGameRules.legalActionsFor(
+        board: board,
+        currentTurn: PieceSide.blue,
+        playerOneSide: PieceSide.red,
+      );
+
+      final action = JungleAi.chooseAction(
+        state: AiGameState.fromBoard(
+          board: board,
+          currentTurn: PieceSide.blue,
+          playerOneSide: PieceSide.red,
+        ),
+        difficulty: AiDifficulty.normal,
+        random: Random(1),
+        recentActions: const <GameAction>[
+          GameAction.move(from: BoardPosition(1, 1), to: BoardPosition(1, 2)),
+          GameAction.move(from: BoardPosition(1, 2), to: BoardPosition(1, 1)),
+          GameAction.move(from: BoardPosition(1, 1), to: BoardPosition(1, 2)),
+        ],
+      );
+
+      expect(legalActions, contains(action));
+      expect(action, isNot(blockedRepeat));
+    });
+
+    test('hard AI avoids moving a high piece next to a rat', () {
+      final board = emptyBoard()
+        ..[1][1] = piece(PieceSide.red, 8)
+        ..[1][3] = piece(PieceSide.blue, 1)
+        ..[3][3] = piece(PieceSide.blue, 3);
+
+      final action = JungleAi.chooseAction(
+        state: AiGameState.fromBoard(
+          board: board,
+          currentTurn: PieceSide.red,
+          playerOneSide: PieceSide.red,
+        ),
+        difficulty: AiDifficulty.hard,
+        random: Random(2),
+      );
+
+      expect(
+        action,
+        isNot(
+          const GameAction.move(
+            from: BoardPosition(1, 1),
+            to: BoardPosition(1, 2),
+          ),
+        ),
+      );
     });
   });
 }

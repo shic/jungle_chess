@@ -142,6 +142,10 @@ class JungleStrings {
   String get gameModeLabel => _lookup('gameModeLabel');
   String get aiDifficultyLabel => _lookup('aiDifficultyLabel');
   String get modeChangeTitle => _lookup('modeChangeTitle');
+  String get modeSelectionTitle => _lookup('modeSelectionTitle');
+  String get modeSelectionSubtitle => _lookup('modeSelectionSubtitle');
+  String get localTwoPlayerDescription => _lookup('localTwoPlayerDescription');
+  String get vsComputerDescription => _lookup('vsComputerDescription');
 
   String gameModeOption(String mode) => _lookup('gameMode.$mode');
 
@@ -587,6 +591,12 @@ const Map<String, String> _englishStrings = <String, String>{
   'aiDifficulty.hard': 'Hard',
   'modeChangeTitle': 'Change mode?',
   'modeChangeContent': 'Switching to {mode} will restart the current game.',
+  'modeSelectionTitle': 'Choose match',
+  'modeSelectionSubtitle':
+      'Pick a local two-player game or play against the computer.',
+  'localTwoPlayerDescription': 'Two people share this device and take turns.',
+  'vsComputerDescription':
+      'Play locally against the computer with no server required.',
   'side.red': 'Red',
   'side.blue': 'Blue',
   'animal.1': 'Rat',
@@ -702,6 +712,10 @@ const Map<String, String> _chineseStrings = <String, String>{
   'aiDifficulty.hard': '困难',
   'modeChangeTitle': '切换模式？',
   'modeChangeContent': '切换到{mode}会重新开始当前棋局。',
+  'modeSelectionTitle': '选择对局',
+  'modeSelectionSubtitle': '选择本地双人对战，或者和电脑进行人机对战。',
+  'localTwoPlayerDescription': '两名玩家共用这台设备轮流操作。',
+  'vsComputerDescription': '和本地电脑算法对战，不需要服务器。',
   'side.red': '红',
   'side.blue': '蓝',
   'animal.1': '鼠',
