@@ -199,7 +199,7 @@
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				FFE02B4BDBC8AA27F2DA24E4 /* [CP] Embed Pods Frameworks */,
 				35D9DADCA4BB733365E02016 /* [CP] Copy Pods Resources */,
-				C0D37A100B1ECD5D00000001 /* Copy objective_c dSYM */,
+				C0D37A100B1ECD5D00000001 /* Copy framework dSYMs */,
 			);
 			buildRules = (
 			);
@@ -345,7 +345,7 @@
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
 		};
-		C0D37A100B1ECD5D00000001 /* Copy objective_c dSYM */ = {
+		C0D37A100B1ECD5D00000001 /* Copy framework dSYMs */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -353,14 +353,18 @@
 			);
 			inputPaths = (
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/objective_c.framework/objective_c",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/GoogleMobileAds.framework/GoogleMobileAds",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/UserMessagingPlatform.framework/UserMessagingPlatform",
 			);
-			name = "Copy objective_c dSYM";
+			name = "Copy framework dSYMs";
 			outputPaths = (
 				"${DWARF_DSYM_FOLDER_PATH}/objective_c.framework.dSYM",
+				"${DWARF_DSYM_FOLDER_PATH}/GoogleMobileAds.framework.dSYM",
+				"${DWARF_DSYM_FOLDER_PATH}/UserMessagingPlatform.framework.dSYM",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$SRCROOT/scripts/copy_objective_c_dsym.sh\"\n";
+			shellScript = "/bin/sh \"$SRCROOT/scripts/copy_framework_dsyms.sh\"\n";
 		};
 		D9F6187D99227DC826C1AF38 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
