@@ -81,6 +81,7 @@ class JungleAi {
   static const int _hardDepth = 4;
   static const int _hardNodeLimit = 3200;
   static const int _hardBranchLimit = 16;
+  static const int _hardRootBranchLimit = 8;
 
   static GameAction? chooseAction({
     required AiGameState state,
@@ -95,6 +96,15 @@ class JungleAi {
     }
 
     final rng = random ?? Random();
+    final safeCapture = _chooseSafeKnownCapture(
+      state: state,
+      actions: actions,
+      random: rng,
+    );
+    if (safeCapture != null) {
+      return safeCapture;
+    }
+
     return switch (difficulty) {
       AiDifficulty.easy => _chooseEasy(actions, rng),
       AiDifficulty.normal => _chooseBest(
@@ -102,18 +112,10 @@ class JungleAi {
         random: rng,
         score: (action) => _scoreImmediate(state, action, state.currentTurn),
       ),
-      AiDifficulty.hard => _chooseBest(
+      AiDifficulty.hard => _chooseHard(
+        state: state,
         actions: actions,
         random: rng,
-        score: (action) => _expectedActionValue(
-          state,
-          action,
-          state.currentTurn,
-          _hardDepth,
-          _SearchBudget(_hardNodeLimit),
-          double.negativeInfinity,
-          double.infinity,
-        ),
       ),
     };
   }
@@ -216,6 +218,52 @@ class JungleAi {
     return weighted[random.nextInt(weighted.length)];
   }
 
+  static GameAction? _chooseSafeKnownCapture({
+    required AiGameState state,
+    required List<GameAction> actions,
+    required Random random,
+  }) {
+    final captures = <GameAction>[];
+    var bestScore = double.negativeInfinity;
+    for (final action in actions) {
+      if (action.kind != GameActionKind.capture || action.from == null) {
+        continue;
+      }
+
+      final next = _applyKnownAction(state, action);
+      final attacker = next.visibleBoard[action.to.row][action.to.col];
+      if (attacker == null || attacker.side != state.currentTurn) {
+        continue;
+      }
+      if (_isThreatened(next, action.to, state.currentTurn)) {
+        continue;
+      }
+
+      final exchangeValue = _captureExchangeValue(state, action);
+      if (exchangeValue <= 0) {
+        continue;
+      }
+      final score =
+          exchangeValue * 10 +
+          _scoreImmediate(state, action, state.currentTurn);
+      if (score > bestScore + 0.0001) {
+        bestScore = score;
+        captures
+          ..clear()
+          ..add(action);
+        continue;
+      }
+      if ((score - bestScore).abs() <= 0.0001) {
+        captures.add(action);
+      }
+    }
+
+    if (captures.isEmpty) {
+      return null;
+    }
+    return captures[random.nextInt(captures.length)];
+  }
+
   static GameAction _chooseBest({
     required List<GameAction> actions,
     required Random random,
@@ -236,6 +284,48 @@ class JungleAi {
         bestActions.add(action);
       }
     }
+    return bestActions[random.nextInt(bestActions.length)];
+  }
+
+  static GameAction _chooseHard({
+    required AiGameState state,
+    required List<GameAction> actions,
+    required Random random,
+  }) {
+    final candidates = _orderedCandidates(
+      state,
+      actions,
+    ).take(_hardRootBranchLimit).toList();
+    final budget = _SearchBudget(_hardNodeLimit);
+    var bestScore = double.negativeInfinity;
+    final bestActions = <GameAction>[];
+
+    for (final action in candidates) {
+      if (budget.exhausted && bestActions.isNotEmpty) {
+        break;
+      }
+
+      final value = _expectedActionValue(
+        state,
+        action,
+        state.currentTurn,
+        _hardDepth,
+        budget,
+        double.negativeInfinity,
+        double.infinity,
+      );
+      if (value > bestScore + 0.0001) {
+        bestScore = value;
+        bestActions
+          ..clear()
+          ..add(action);
+        continue;
+      }
+      if ((value - bestScore).abs() <= 0.0001) {
+        bestActions.add(action);
+      }
+    }
+
     return bestActions[random.nextInt(bestActions.length)];
   }
 

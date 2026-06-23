@@ -330,6 +330,62 @@ void main() {
       );
     });
 
+    test('AI takes a safe adjacent capture before flipping', () {
+      final hiddenPieces = <GamePiece>[
+        piece(PieceSide.red, 1, revealed: false),
+        piece(PieceSide.red, 2, revealed: false),
+        piece(PieceSide.red, 3, revealed: false),
+        piece(PieceSide.red, 4, revealed: false),
+        piece(PieceSide.red, 5, revealed: false),
+        piece(PieceSide.red, 6, revealed: false),
+        piece(PieceSide.red, 8, revealed: false),
+        piece(PieceSide.blue, 2, revealed: false),
+        piece(PieceSide.blue, 3, revealed: false),
+        piece(PieceSide.blue, 4, revealed: false),
+        piece(PieceSide.blue, 5, revealed: false),
+        piece(PieceSide.blue, 7, revealed: false),
+        piece(PieceSide.blue, 8, revealed: false),
+      ];
+      var hiddenIndex = 0;
+      final board = List<List<GamePiece?>>.generate(
+        JungleGameRules.boardSize,
+        (row) => List<GamePiece?>.generate(JungleGameRules.boardSize, (col) {
+          final position = BoardPosition(row, col);
+          if (position == const BoardPosition(0, 0)) {
+            return piece(PieceSide.blue, 1);
+          }
+          if (position == const BoardPosition(2, 1)) {
+            return piece(PieceSide.red, 7);
+          }
+          if (position == const BoardPosition(2, 2)) {
+            return piece(PieceSide.blue, 6);
+          }
+          return hiddenPieces[hiddenIndex++];
+        }),
+      );
+
+      for (final difficulty in AiDifficulty.values) {
+        final action = JungleAi.chooseAction(
+          state: AiGameState.fromBoard(
+            board: board,
+            currentTurn: PieceSide.red,
+            playerOneSide: PieceSide.blue,
+          ),
+          difficulty: difficulty,
+          random: Random(1),
+        );
+
+        expect(
+          action,
+          const GameAction.capture(
+            from: BoardPosition(2, 1),
+            to: BoardPosition(2, 2),
+          ),
+          reason: '${difficulty.name} should not flip while 7 can safely eat 6',
+        );
+      }
+    });
+
     test('AI avoids a fourth repeated back-and-forth move', () {
       final board = emptyBoard()
         ..[1][2] = piece(PieceSide.blue, 7)
