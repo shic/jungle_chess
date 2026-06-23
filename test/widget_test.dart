@@ -547,6 +547,50 @@ void main() {
     );
   });
 
+  testWidgets('keeps board pinned when Italian computer turn wraps on phones', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: JungleChessPage(
+          languageCode: 'it',
+          initialGameMode: GameMode.vsComputer,
+          initialAiDifficulty: AiDifficulty.easy,
+          initialBoard: hiddenOpeningBoard(
+            first: const GamePiece(side: PieceSide.red, rank: 8),
+            second: const GamePiece(side: PieceSide.blue, rank: 2),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('board-cell-0-0')));
+    await tester.pump();
+
+    expect(_currentTurnText('Turno attuale: Computer (Blu)'), findsOneWidget);
+    final computerTurnBoardTop = tester
+        .getTopLeft(find.byKey(const ValueKey<String>('board-cell-0-0')))
+        .dy;
+
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump();
+
+    expect(_currentTurnText('Turno attuale: Tu (Rosso)'), findsOneWidget);
+    final playerTurnBoardTop = tester
+        .getTopLeft(find.byKey(const ValueKey<String>('board-cell-0-0')))
+        .dy;
+
+    expect(
+      playerTurnBoardTop,
+      moreOrLessEquals(computerTurnBoardTop, epsilon: 0.1),
+    );
+  });
+
   testWidgets('keeps first flip toast visible for five seconds', (
     tester,
   ) async {

@@ -1856,7 +1856,12 @@ class _JungleChessPageState extends State<JungleChessPage> {
         : _isDraw
         ? strings.drawHeading
         : strings.openingHeading;
-    const headingStyle = TextStyle(fontSize: 22, fontWeight: FontWeight.w700);
+    const headingStyle = TextStyle(
+      fontSize: 22,
+      height: 1.2,
+      fontWeight: FontWeight.w700,
+    );
+    final headingLineHeight = MediaQuery.textScalerOf(context).scale(22 * 1.2);
 
     return Card(
       elevation: 1,
@@ -1869,51 +1874,54 @@ class _JungleChessPageState extends State<JungleChessPage> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: _winner != null || _isDraw
-                            ? Colors.grey
-                            : turnColor,
-                        shape: BoxShape.circle,
+                SizedBox(
+                  height: headingLineHeight * 2,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: _winner != null || _isDraw
+                              ? Colors.grey
+                              : turnColor,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: isCurrentTurnHeading
-                          ? Text.rich(
-                              TextSpan(
-                                style: headingStyle,
-                                children: [
-                                  TextSpan(text: strings.currentTurnPrefix()),
-                                  TextSpan(
-                                    text: strings.currentTurnSide(
-                                      _currentTurn,
-                                      _playerOneSide,
-                                      computerOpponent: _isVsComputer,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: isCurrentTurnHeading
+                            ? Text.rich(
+                                TextSpan(
+                                  style: headingStyle,
+                                  children: [
+                                    TextSpan(text: strings.currentTurnPrefix()),
+                                    TextSpan(
+                                      text: strings.currentTurnSide(
+                                        _currentTurn,
+                                        _playerOneSide,
+                                        computerOpponent: _isVsComputer,
+                                      ),
+                                      style: TextStyle(color: turnColor),
                                     ),
-                                    style: TextStyle(color: turnColor),
-                                  ),
-                                  TextSpan(text: strings.currentTurnSuffix()),
-                                ],
+                                    TextSpan(text: strings.currentTurnSuffix()),
+                                  ],
+                                ),
+                                key: const ValueKey<String>(
+                                  'current-turn-heading',
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              )
+                            : Text(
+                                heading,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: headingStyle,
                               ),
-                              key: const ValueKey<String>(
-                                'current-turn-heading',
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            )
-                          : Text(
-                              heading,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: headingStyle,
-                            ),
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 14),
                 _buildStatusActions(strings),
@@ -2181,16 +2189,20 @@ class _JungleChessPageState extends State<JungleChessPage> {
                     color: sideColor,
                   ),
                   const SizedBox(width: 10),
-                  Text(
-                    strings.aiThinking(
-                      _currentTurn,
-                      _playerOneSide,
-                      computerOpponent: _isVsComputer,
-                    ),
-                    style: const TextStyle(
-                      color: Color(0xFF3F332B),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+                  Flexible(
+                    child: Text(
+                      strings.aiThinking(
+                        _currentTurn,
+                        _playerOneSide,
+                        computerOpponent: _isVsComputer,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF3F332B),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
