@@ -1,5 +1,6 @@
 // Local computer player for Animal Kings. It only receives visible board state.
 
+import 'dart:collection';
 import 'dart:math';
 
 import 'package:jungle_chess/game_rules.dart';
@@ -81,7 +82,93 @@ class JungleAi {
   static const int _hardDepth = 4;
   static const int _hardNodeLimit = 3200;
   static const int _hardBranchLimit = 16;
-  static const int _hardRootBranchLimit = 8;
+  static const int _hardRootBranchLimit = 16;
+  static const double _hardKnownCaptureTieMargin = 4.0;
+  static const int _openingBookMaxVisiblePieces = 3;
+  static const int _transpositionCacheLimit = 12000;
+  static final LinkedHashMap<_TranspositionKey, double> _transpositionCache =
+      LinkedHashMap<_TranspositionKey, double>();
+  static const Map<int, List<BoardPosition>> _openingBookFlipOrders =
+      <int, List<BoardPosition>>{
+        0: <BoardPosition>[
+          BoardPosition(1, 1),
+          BoardPosition(1, 2),
+          BoardPosition(2, 1),
+          BoardPosition(2, 2),
+          BoardPosition(0, 1),
+          BoardPosition(1, 0),
+          BoardPosition(0, 2),
+          BoardPosition(2, 0),
+          BoardPosition(1, 3),
+          BoardPosition(3, 1),
+          BoardPosition(2, 3),
+          BoardPosition(3, 2),
+          BoardPosition(0, 0),
+          BoardPosition(0, 3),
+          BoardPosition(3, 0),
+          BoardPosition(3, 3),
+        ],
+        1: <BoardPosition>[
+          BoardPosition(1, 1),
+          BoardPosition(2, 2),
+          BoardPosition(1, 2),
+          BoardPosition(2, 1),
+          BoardPosition(0, 1),
+          BoardPosition(1, 0),
+          BoardPosition(2, 3),
+          BoardPosition(3, 2),
+          BoardPosition(0, 2),
+          BoardPosition(2, 0),
+          BoardPosition(1, 3),
+          BoardPosition(3, 1),
+          BoardPosition(0, 0),
+          BoardPosition(3, 3),
+          BoardPosition(0, 3),
+          BoardPosition(3, 0),
+        ],
+        2: <BoardPosition>[
+          BoardPosition(1, 2),
+          BoardPosition(2, 1),
+          BoardPosition(1, 1),
+          BoardPosition(2, 2),
+          BoardPosition(0, 1),
+          BoardPosition(1, 0),
+          BoardPosition(2, 3),
+          BoardPosition(3, 2),
+          BoardPosition(0, 2),
+          BoardPosition(2, 0),
+          BoardPosition(1, 3),
+          BoardPosition(3, 1),
+          BoardPosition(0, 0),
+          BoardPosition(0, 3),
+          BoardPosition(3, 0),
+          BoardPosition(3, 3),
+        ],
+        3: <BoardPosition>[
+          BoardPosition(2, 1),
+          BoardPosition(1, 2),
+          BoardPosition(2, 2),
+          BoardPosition(1, 1),
+          BoardPosition(0, 1),
+          BoardPosition(1, 0),
+          BoardPosition(2, 3),
+          BoardPosition(3, 2),
+          BoardPosition(0, 2),
+          BoardPosition(2, 0),
+          BoardPosition(1, 3),
+          BoardPosition(3, 1),
+          BoardPosition(3, 0),
+          BoardPosition(0, 3),
+          BoardPosition(3, 3),
+          BoardPosition(0, 0),
+        ],
+      };
+
+  static int get debugTranspositionCacheSize => _transpositionCache.length;
+
+  static void clearTranspositionCacheForTesting() {
+    _transpositionCache.clear();
+  }
 
   static GameAction? chooseAction({
     required AiGameState state,
@@ -96,13 +183,22 @@ class JungleAi {
     }
 
     final rng = random ?? Random();
-    final safeCapture = _chooseSafeKnownCapture(
-      state: state,
-      actions: actions,
-      random: rng,
-    );
-    if (safeCapture != null) {
-      return safeCapture;
+    if (difficulty != AiDifficulty.hard) {
+      final safeCapture = _chooseSafeKnownCapture(
+        state: state,
+        actions: actions,
+        random: rng,
+      );
+      if (safeCapture != null) {
+        return safeCapture;
+      }
+    }
+
+    final openingAction = difficulty == AiDifficulty.easy
+        ? null
+        : _chooseOpeningBookAction(state: state, actions: actions, random: rng);
+    if (openingAction != null) {
+      return openingAction;
     }
 
     return switch (difficulty) {
@@ -235,9 +331,6 @@ class JungleAi {
       if (attacker == null || attacker.side != state.currentTurn) {
         continue;
       }
-      if (_isThreatened(next, action.to, state.currentTurn)) {
-        continue;
-      }
 
       final exchangeValue = _captureExchangeValue(state, action);
       if (exchangeValue <= 0) {
@@ -287,6 +380,45 @@ class JungleAi {
     return bestActions[random.nextInt(bestActions.length)];
   }
 
+  static GameAction? _chooseOpeningBookAction({
+    required AiGameState state,
+    required List<GameAction> actions,
+    required Random random,
+  }) {
+    final visiblePieces = _visiblePieceCount(state);
+    if (visiblePieces > _openingBookMaxVisiblePieces ||
+        visiblePieces + state.hiddenPositions.length !=
+            JungleGameRules.boardSize * JungleGameRules.boardSize) {
+      return null;
+    }
+    if (actions.any((action) => action.kind == GameActionKind.capture)) {
+      return null;
+    }
+
+    final flipsByPosition = <BoardPosition, GameAction>{
+      for (final action in actions)
+        if (action.kind == GameActionKind.flip) action.to: action,
+    };
+    if (flipsByPosition.isEmpty) {
+      return null;
+    }
+
+    for (final position
+        in _openingBookFlipOrders[visiblePieces] ??
+            _openingBookFlipOrders[0]!) {
+      final action = flipsByPosition[position];
+      if (action != null) {
+        return action;
+      }
+    }
+
+    return _chooseBest(
+      actions: flipsByPosition.values.toList(),
+      random: random,
+      score: (action) => _flipPositionScore(state, action.to),
+    );
+  }
+
   static GameAction _chooseHard({
     required AiGameState state,
     required List<GameAction> actions,
@@ -296,12 +428,14 @@ class JungleAi {
       state,
       actions,
     ).take(_hardRootBranchLimit).toList();
-    final budget = _SearchBudget(_hardNodeLimit);
+    final search = _SearchContext(_hardNodeLimit);
     var bestScore = double.negativeInfinity;
     final bestActions = <GameAction>[];
+    var bestCaptureScore = double.negativeInfinity;
+    final bestCaptureActions = <GameAction>[];
 
     for (final action in candidates) {
-      if (budget.exhausted && bestActions.isNotEmpty) {
+      if (search.exhausted && bestActions.isNotEmpty) {
         break;
       }
 
@@ -310,10 +444,21 @@ class JungleAi {
         action,
         state.currentTurn,
         _hardDepth,
-        budget,
+        search,
         double.negativeInfinity,
         double.infinity,
       );
+      if (action.kind == GameActionKind.capture &&
+          _captureExchangeValue(state, action) > 0) {
+        if (value > bestCaptureScore + 0.0001) {
+          bestCaptureScore = value;
+          bestCaptureActions
+            ..clear()
+            ..add(action);
+        } else if ((value - bestCaptureScore).abs() <= 0.0001) {
+          bestCaptureActions.add(action);
+        }
+      }
       if (value > bestScore + 0.0001) {
         bestScore = value;
         bestActions
@@ -326,6 +471,10 @@ class JungleAi {
       }
     }
 
+    if (bestCaptureActions.isNotEmpty &&
+        bestScore - bestCaptureScore <= _hardKnownCaptureTieMargin) {
+      return bestCaptureActions[random.nextInt(bestCaptureActions.length)];
+    }
     return bestActions[random.nextInt(bestActions.length)];
   }
 
@@ -334,11 +483,11 @@ class JungleAi {
     GameAction action,
     PieceSide rootSide,
     int depth,
-    _SearchBudget budget,
+    _SearchContext search,
     double alpha,
     double beta,
   ) {
-    if (!budget.take()) {
+    if (!search.take()) {
       return _evaluate(state, rootSide);
     }
 
@@ -348,7 +497,7 @@ class JungleAi {
         action,
         rootSide,
         depth,
-        budget,
+        search,
         alpha,
         beta,
       );
@@ -356,30 +505,58 @@ class JungleAi {
     }
 
     final next = _applyKnownAction(state, action);
-    return _search(next, rootSide, depth - 1, budget, alpha, beta) +
-        _actionSafetyAdjustment(state, next, action, rootSide);
+    return _search(next, rootSide, depth - 1, search, alpha, beta) +
+        _actionSafetyAdjustment(state, next, action, rootSide) +
+        _knownActionBias(state, action, rootSide);
+  }
+
+  static double _knownActionBias(
+    AiGameState state,
+    GameAction action,
+    PieceSide rootSide,
+  ) {
+    final actor = state.currentTurn;
+    final bias = switch (action.kind) {
+      GameActionKind.capture => _captureExchangeValue(state, action) * 4.0,
+      GameActionKind.move => _scoreImmediate(state, action, actor) * 0.08,
+      GameActionKind.flip => 0.0,
+    };
+    return actor == rootSide ? bias : -bias;
   }
 
   static double _search(
     AiGameState state,
     PieceSide rootSide,
     int depth,
-    _SearchBudget budget,
+    _SearchContext search,
     double alpha,
     double beta,
   ) {
-    if (!budget.take() || depth <= 0) {
+    final key = _TranspositionKey.from(
+      state: state,
+      rootSide: rootSide,
+      depth: depth,
+    );
+    final cached = _cachedTransposition(key);
+    if (cached != null) {
+      return cached;
+    }
+
+    if (!search.take() || depth <= 0) {
       return _evaluate(state, rootSide);
     }
 
     final terminalScore = _terminalScore(state, rootSide);
     if (terminalScore != null) {
+      _rememberTransposition(key, terminalScore);
       return terminalScore;
     }
 
     final actions = _legalActions(state);
     if (actions.isEmpty) {
-      return state.currentTurn == rootSide ? -9000 : 9000;
+      final value = state.currentTurn == rootSide ? -9000.0 : 9000.0;
+      _rememberTransposition(key, value);
+      return value;
     }
 
     final candidates = _orderedCandidates(
@@ -397,15 +574,18 @@ class JungleAi {
             action,
             rootSide,
             depth,
-            budget,
+            search,
             alpha,
             beta,
           ),
         );
         alpha = max(alpha, best);
-        if (alpha >= beta || budget.exhausted) {
+        if (alpha >= beta || search.exhausted) {
           break;
         }
+      }
+      if (!search.exhausted) {
+        _rememberTransposition(key, best);
       }
       return best;
     }
@@ -419,15 +599,18 @@ class JungleAi {
           action,
           rootSide,
           depth,
-          budget,
+          search,
           alpha,
           beta,
         ),
       );
       beta = min(beta, worst);
-      if (beta <= alpha || budget.exhausted) {
+      if (beta <= alpha || search.exhausted) {
         break;
       }
+    }
+    if (!search.exhausted) {
+      _rememberTransposition(key, worst);
     }
     return worst;
   }
@@ -437,7 +620,7 @@ class JungleAi {
     GameAction action,
     PieceSide rootSide,
     int depth,
-    _SearchBudget budget,
+    _SearchContext search,
     double alpha,
     double beta,
   ) {
@@ -453,10 +636,10 @@ class JungleAi {
       final next = _applyHypotheticalFlip(state, action.to, piece);
       final value = depth <= 1
           ? _evaluate(next, rootSide)
-          : _search(next, rootSide, depth - 1, budget, alpha, beta);
+          : _search(next, rootSide, depth - 1, search, alpha, beta);
       totalWeight += count;
       totalScore += value * count;
-      if (budget.exhausted) {
+      if (search.exhausted) {
         break;
       }
     }
@@ -701,6 +884,18 @@ class JungleAi {
     return count;
   }
 
+  static int _visiblePieceCount(AiGameState state) {
+    var count = 0;
+    for (final row in state.visibleBoard) {
+      for (final piece in row) {
+        if (piece != null) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
   static int _mobility(AiGameState state, PieceSide side) {
     return _legalActions(
       AiGameState(
@@ -788,31 +983,36 @@ class JungleAi {
     }
 
     final next = _applyKnownAction(state, action);
-    if (_isThreatened(next, action.to, attacker.side)) {
-      value -= _pieceValue(attacker) * 0.95;
-    }
-    return value;
+    return value - _recaptureCost(next, action.to, attacker);
   }
 
-  static bool _isThreatened(
+  static double _recaptureCost(
     AiGameState state,
     BoardPosition position,
-    PieceSide side,
+    GamePiece capturedBy,
   ) {
-    final piece = state.visibleBoard[position.row][position.col];
-    if (piece == null || piece.side != side) {
-      return false;
-    }
+    var worstCost = 0.0;
     for (final adjacent in JungleGameRules.adjacentPositions(position)) {
-      final attacker = state.visibleBoard[adjacent.row][adjacent.col];
-      if (attacker == null || attacker.side == side) {
+      final recapturer = state.visibleBoard[adjacent.row][adjacent.col];
+      if (recapturer == null || recapturer.side == capturedBy.side) {
         continue;
       }
-      if (JungleGameRules.canCapture(attacker: attacker, defender: piece)) {
-        return true;
+      if (!JungleGameRules.canCapture(
+        attacker: recapturer,
+        defender: capturedBy,
+      )) {
+        continue;
       }
+
+      var cost = _pieceValue(capturedBy);
+      if (recapturer.rank == capturedBy.rank) {
+        cost -= _pieceValue(recapturer);
+      } else if (_canRecaptureAt(state, position, recapturer)) {
+        cost -= _pieceValue(recapturer) * 0.35;
+      }
+      worstCost = max(worstCost, max(0, cost));
     }
-    return false;
+    return worstCost;
   }
 
   static bool _canRecaptureAt(
@@ -884,6 +1084,23 @@ class JungleAi {
         GamePiece(side: entry.key.side, rank: entry.key.rank): entry.value,
     };
   }
+
+  static double? _cachedTransposition(_TranspositionKey key) {
+    final value = _transpositionCache.remove(key);
+    if (value == null) {
+      return null;
+    }
+    _transpositionCache[key] = value;
+    return value;
+  }
+
+  static void _rememberTransposition(_TranspositionKey key, double value) {
+    _transpositionCache.remove(key);
+    _transpositionCache[key] = value;
+    while (_transpositionCache.length > _transpositionCacheLimit) {
+      _transpositionCache.remove(_transpositionCache.keys.first);
+    }
+  }
 }
 
 class _MoveEdge {
@@ -935,6 +1152,84 @@ class _SearchBudget {
     remaining--;
     return true;
   }
+}
+
+class _SearchContext {
+  _SearchContext(int nodeLimit) : _budget = _SearchBudget(nodeLimit);
+
+  final _SearchBudget _budget;
+
+  bool get exhausted => _budget.exhausted;
+
+  bool take() {
+    return _budget.take();
+  }
+}
+
+class _TranspositionKey {
+  const _TranspositionKey(this.value);
+
+  factory _TranspositionKey.from({
+    required AiGameState state,
+    required PieceSide rootSide,
+    required int depth,
+  }) {
+    final hiddenPositions = Set<BoardPosition>.of(state.hiddenPositions);
+    final buffer = StringBuffer()
+      ..write(depth)
+      ..write('|')
+      ..write(rootSide.index)
+      ..write('|')
+      ..write(state.currentTurn.index)
+      ..write('|')
+      ..write(state.playerOneSide?.index ?? '-')
+      ..write('|')
+      ..write(state.consecutiveNonCaptureTurns)
+      ..write('|');
+
+    for (var row = 0; row < JungleGameRules.boardSize; row++) {
+      for (var col = 0; col < JungleGameRules.boardSize; col++) {
+        final position = BoardPosition(row, col);
+        if (hiddenPositions.contains(position)) {
+          buffer.write('?');
+          continue;
+        }
+
+        final piece = state.visibleBoard[row][col];
+        if (piece == null) {
+          buffer.write('.');
+          continue;
+        }
+        buffer
+          ..write(piece.side.index)
+          ..write(piece.rank);
+      }
+      buffer.write('/');
+    }
+
+    buffer.write('|');
+    for (final piece in state.hiddenPool) {
+      buffer
+        ..write(piece.side.index)
+        ..write(piece.rank)
+        ..write(',');
+    }
+
+    return _TranspositionKey(buffer.toString());
+  }
+
+  final String value;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    return other is _TranspositionKey && other.value == value;
+  }
+
+  @override
+  int get hashCode => value.hashCode;
 }
 
 class _PieceKey {

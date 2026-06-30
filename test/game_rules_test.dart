@@ -280,6 +280,52 @@ void main() {
       expect(secondAction, firstAction);
     });
 
+    test('normal and hard AI use the opening book for early flips', () {
+      final board = openingBoard(
+        revealedPosition: const BoardPosition(0, 0),
+        revealedPiece: piece(PieceSide.red, 4),
+      );
+      JungleAi.clearTranspositionCacheForTesting();
+
+      for (final difficulty in <AiDifficulty>[
+        AiDifficulty.normal,
+        AiDifficulty.hard,
+      ]) {
+        final action = JungleAi.chooseAction(
+          state: AiGameState.fromBoard(
+            board: board,
+            currentTurn: PieceSide.blue,
+            playerOneSide: PieceSide.red,
+          ),
+          difficulty: difficulty,
+          random: Random(1),
+        );
+
+        expect(action, const GameAction.flip(BoardPosition(1, 1)));
+      }
+      expect(JungleAi.debugTranspositionCacheSize, 0);
+    });
+
+    test('hard AI caches search positions after the opening book', () {
+      final board = emptyBoard()
+        ..[0][0] = piece(PieceSide.red, 8)
+        ..[0][3] = piece(PieceSide.blue, 1);
+      JungleAi.clearTranspositionCacheForTesting();
+
+      final action = JungleAi.chooseAction(
+        state: AiGameState.fromBoard(
+          board: board,
+          currentTurn: PieceSide.red,
+          playerOneSide: PieceSide.red,
+        ),
+        difficulty: AiDifficulty.hard,
+        random: Random(5),
+      );
+
+      expect(action, isNotNull);
+      expect(JungleAi.debugTranspositionCacheSize, greaterThan(0));
+    });
+
     test('easy AI only returns legal actions', () {
       final board = emptyBoard()
         ..[0][0] = piece(PieceSide.red, 8)
@@ -382,6 +428,40 @@ void main() {
             to: BoardPosition(2, 2),
           ),
           reason: '${difficulty.name} should not flip while 7 can safely eat 6',
+        );
+      }
+    });
+
+    test('AI captures 6 with 7 even when equal-rank recapture is possible', () {
+      final board = emptyBoard()
+        ..[0][0] = piece(PieceSide.red, 1, revealed: false)
+        ..[0][1] = piece(PieceSide.blue, 2, revealed: false)
+        ..[0][2] = piece(PieceSide.red, 7)
+        ..[0][3] = piece(PieceSide.blue, 6)
+        ..[1][0] = piece(PieceSide.red, 4, revealed: false)
+        ..[1][1] = piece(PieceSide.blue, 3)
+        ..[1][2] = piece(PieceSide.red, 5, revealed: false)
+        ..[1][3] = piece(PieceSide.blue, 7);
+
+      for (final difficulty in AiDifficulty.values) {
+        final action = JungleAi.chooseAction(
+          state: AiGameState.fromBoard(
+            board: board,
+            currentTurn: PieceSide.red,
+            playerOneSide: PieceSide.blue,
+          ),
+          difficulty: difficulty,
+          random: Random(1),
+        );
+
+        expect(
+          action,
+          const GameAction.capture(
+            from: BoardPosition(0, 2),
+            to: BoardPosition(0, 3),
+          ),
+          reason:
+              '${difficulty.name} should value 7x6 even if blue 7 can trade',
         );
       }
     });
@@ -506,6 +586,36 @@ GameBoard emptyBoard() {
     JungleGameRules.boardSize * JungleGameRules.boardSize,
     (_) => null,
   ).chunkedBoard();
+}
+
+GameBoard openingBoard({
+  required BoardPosition revealedPosition,
+  required GamePiece revealedPiece,
+}) {
+  final hiddenPieces = <GamePiece>[
+    for (var rank = 1; rank <= 8; rank++)
+      piece(PieceSide.red, rank, revealed: false),
+    for (var rank = 1; rank <= 8; rank++)
+      piece(PieceSide.blue, rank, revealed: false),
+  ];
+  hiddenPieces.removeAt(
+    hiddenPieces.indexWhere(
+      (piece) =>
+          piece.side == revealedPiece.side && piece.rank == revealedPiece.rank,
+    ),
+  );
+
+  var hiddenIndex = 0;
+  return List<List<GamePiece?>>.generate(
+    JungleGameRules.boardSize,
+    (row) => List<GamePiece?>.generate(JungleGameRules.boardSize, (col) {
+      final position = BoardPosition(row, col);
+      if (position == revealedPosition) {
+        return revealedPiece.copyWith(revealed: true);
+      }
+      return hiddenPieces[hiddenIndex++];
+    }),
+  );
 }
 
 GameBoard fullAlternatingBoard({required int redRank, required int blueRank}) {
