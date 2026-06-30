@@ -133,7 +133,7 @@ class JungleGameRules {
   const JungleGameRules._();
 
   static const int boardSize = 4;
-  static const int nonCaptureDrawLimit = 20;
+  static const int nonCaptureDrawLimit = 30;
   static const Map<int, String> animalNames = <int, String>{
     1: '鼠',
     2: '猫',

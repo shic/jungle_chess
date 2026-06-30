@@ -223,6 +223,8 @@ void main() {
     });
 
     test('consecutive non-captures draw at the configured limit', () {
+      expect(JungleGameRules.nonCaptureDrawLimit, 30);
+
       final outcome = JungleGameRules.evaluateAfterTurn(
         board: openBoardWithMoves(),
         actor: PieceSide.red,
