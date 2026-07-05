@@ -1,0 +1,30 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Upload English App Store screenshots and release notes for the current iOS version"
+  lane :upload_screenshots do
+    options = {
+      app_identifier: "com.epicagruppo.jungle",
+      app: 6781449051,
+      app_version: "1.0.3",
+      platform: "ios",
+      team_name: "Epica S.R.L.",
+      dev_portal_team_id: "YA8NKL23YA",
+      screenshots_path: "fastlane/screenshots",
+      metadata_path: "fastlane/metadata",
+      languages: ["en-US"],
+      skip_binary_upload: true,
+      skip_metadata: false,
+      overwrite_screenshots: true,
+      submit_for_review: false,
+      run_precheck_before_submit: false,
+      precheck_include_in_app_purchases: false,
+      force: true
+    }
+
+    username = ENV["DELIVER_USERNAME"] || ENV["DELIVER_USER"] || ENV["FASTLANE_USER"]
+    options[:username] = username if username && !username.empty?
+
+    upload_to_app_store(options)
+  end
+end

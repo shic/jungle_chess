@@ -1,0 +1,6 @@
+app_identifier("com.epicagruppo.jungle")
+
+itc_team_name("Epica S.R.L.")
+team_id("YA8NKL23YA")
+
+apple_id(ENV["FASTLANE_USER"]) if ENV["FASTLANE_USER"]
