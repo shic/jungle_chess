@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:jungle_chess/ad_diagnostics_logger.dart';
 
 class ResetInterstitialAdService {
   ResetInterstitialAdService._();
@@ -21,6 +22,7 @@ class ResetInterstitialAdService {
       ResetInterstitialAdService._();
 
   InterstitialAd? _interstitialAd;
+  final AdDiagnosticsLogger _diagnosticsLogger = createAdDiagnosticsLogger();
   bool _initialized = false;
   bool _loading = false;
 
@@ -30,31 +32,66 @@ class ResetInterstitialAdService {
       return;
     }
 
-    await MobileAds.instance.initialize();
-    _initialized = true;
-    _loadAd(adUnitId);
+    try {
+      _logAdLines([
+        'Interstitial SDK initialization requested',
+        'platform: $_platformLabel',
+        'buildMode: $_buildModeLabel',
+        'adUnitId: $adUnitId',
+      ]);
+      await MobileAds.instance.initialize();
+      _initialized = true;
+      _logAdLines([
+        'Interstitial SDK initialized',
+        'platform: $_platformLabel',
+        'buildMode: $_buildModeLabel',
+        'adUnitId: $adUnitId',
+      ]);
+      _loadAd(adUnitId);
+    } catch (error, stackTrace) {
+      _logAdException(
+        'Interstitial SDK initialization failed',
+        error,
+        stackTrace,
+        adUnitId: adUnitId,
+      );
+    }
   }
 
   Future<void> showBeforeReset() => showBeforeAction();
 
   Future<void> showBeforeAction() async {
     final ad = _interstitialAd;
+    final adUnitId = _adUnitId;
     if (!_initialized || ad == null) {
-      _loadAd(_adUnitId);
+      _logAdNotReady(adUnitId);
+      _loadAd(adUnitId);
       return;
     }
 
     _interstitialAd = null;
     final completer = Completer<void>();
+    _logAdLines([
+      'Interstitial show requested',
+      'platform: $_platformLabel',
+      'buildMode: $_buildModeLabel',
+      'adUnitId: ${adUnitId ?? 'none'}',
+    ]);
 
     ad.fullScreenContentCallback = FullScreenContentCallback(
       onAdDismissedFullScreenContent: (ad) {
+        _logAdLines([
+          'Interstitial dismissed',
+          'platform: $_platformLabel',
+          'buildMode: $_buildModeLabel',
+          'adUnitId: ${adUnitId ?? 'none'}',
+        ]);
         ad.dispose();
         _completeAdFlow(completer);
         _loadAd(_adUnitId);
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
-        debugPrint('Interstitial failed to show: $error');
+        _logAdShowFailure(error, adUnitId);
         ad.dispose();
         _completeAdFlow(completer);
         _loadAd(_adUnitId);
@@ -70,10 +107,24 @@ class ResetInterstitialAdService {
 
   void _loadAd(String? adUnitId) {
     if (!_initialized || _loading || adUnitId == null) {
+      _logAdLines([
+        'Interstitial load skipped',
+        'platform: $_platformLabel',
+        'buildMode: $_buildModeLabel',
+        'adUnitId: ${adUnitId ?? 'none'}',
+        'initialized: $_initialized',
+        'loading: $_loading',
+      ]);
       return;
     }
 
     _loading = true;
+    _logAdLines([
+      'Interstitial load requested',
+      'platform: $_platformLabel',
+      'buildMode: $_buildModeLabel',
+      'adUnitId: $adUnitId',
+    ]);
     InterstitialAd.load(
       adUnitId: adUnitId,
       request: const AdRequest(),
@@ -81,9 +132,10 @@ class ResetInterstitialAdService {
         onAdLoaded: (ad) {
           _interstitialAd = ad;
           _loading = false;
+          _logAdLoaded(ad, adUnitId);
         },
         onAdFailedToLoad: (error) {
-          debugPrint('Interstitial failed to load: $error');
+          _logAdLoadFailure(error, adUnitId);
           _interstitialAd = null;
           _loading = false;
         },
@@ -95,6 +147,135 @@ class ResetInterstitialAdService {
     if (!completer.isCompleted) {
       completer.complete();
     }
+  }
+
+  void _logAdNotReady(String? adUnitId) {
+    _logAdLines([
+      'Interstitial was requested before it was ready',
+      'platform: $_platformLabel',
+      'buildMode: $_buildModeLabel',
+      'adUnitId: ${adUnitId ?? 'none'}',
+      'initialized: $_initialized',
+      'loading: $_loading',
+      'hasCachedAd: ${_interstitialAd != null}',
+    ]);
+  }
+
+  void _logAdLoadFailure(LoadAdError error, String adUnitId) {
+    final responseInfo = error.responseInfo;
+    final adapterResponses = responseInfo?.adapterResponses;
+    final lines = <String>[
+      'Interstitial failed to load',
+      'platform: $_platformLabel',
+      'buildMode: $_buildModeLabel',
+      'adUnitId: $adUnitId',
+      'errorCode: ${error.code}',
+      'errorDomain: ${error.domain}',
+      'errorMessage: ${error.message}',
+      'responseId: ${responseInfo?.responseId ?? 'none'}',
+      'mediationAdapterClassName: '
+          '${responseInfo?.mediationAdapterClassName ?? 'none'}',
+      'responseExtras: ${responseInfo?.responseExtras ?? const {}}',
+      'adapterResponseCount: ${adapterResponses?.length ?? 0}',
+    ];
+
+    if (adapterResponses != null) {
+      for (var i = 0; i < adapterResponses.length; i += 1) {
+        final adapter = adapterResponses[i];
+        lines.addAll([
+          'adapter[$i].adapterClassName: ${adapter.adapterClassName}',
+          'adapter[$i].adSourceName: ${adapter.adSourceName}',
+          'adapter[$i].adSourceId: ${adapter.adSourceId}',
+          'adapter[$i].adSourceInstanceName: ${adapter.adSourceInstanceName}',
+          'adapter[$i].adSourceInstanceId: ${adapter.adSourceInstanceId}',
+          'adapter[$i].latencyMillis: ${adapter.latencyMillis}',
+          'adapter[$i].description: ${adapter.description}',
+          'adapter[$i].adError: ${_formatAdError(adapter.adError)}',
+        ]);
+      }
+    }
+
+    _logAdLines(lines);
+  }
+
+  void _logAdLoaded(InterstitialAd ad, String adUnitId) {
+    final responseInfo = ad.responseInfo;
+    _logAdLines([
+      'Interstitial loaded',
+      'platform: $_platformLabel',
+      'buildMode: $_buildModeLabel',
+      'adUnitId: $adUnitId',
+      'responseId: ${responseInfo?.responseId ?? 'none'}',
+      'mediationAdapterClassName: '
+          '${responseInfo?.mediationAdapterClassName ?? 'none'}',
+      'responseExtras: ${responseInfo?.responseExtras ?? const {}}',
+      'adapterResponseCount: ${responseInfo?.adapterResponses?.length ?? 0}',
+    ]);
+  }
+
+  void _logAdShowFailure(AdError error, String? adUnitId) {
+    _logAdLines([
+      'Interstitial failed to show',
+      'platform: $_platformLabel',
+      'buildMode: $_buildModeLabel',
+      'adUnitId: ${adUnitId ?? 'none'}',
+      'errorCode: ${error.code}',
+      'errorDomain: ${error.domain}',
+      'errorMessage: ${error.message}',
+    ]);
+  }
+
+  void _logAdException(
+    String title,
+    Object error,
+    StackTrace stackTrace, {
+    required String adUnitId,
+  }) {
+    _logAdLines([
+      title,
+      'platform: $_platformLabel',
+      'buildMode: $_buildModeLabel',
+      'adUnitId: $adUnitId',
+      'error: $error',
+      'stackTrace: $stackTrace',
+    ]);
+  }
+
+  void _logAdLines(List<String> lines) {
+    debugPrint('[AdMob] ${lines.first}');
+    for (final line in lines.skip(1)) {
+      debugPrint('[AdMob]   $line');
+    }
+    unawaited(_diagnosticsLogger.writeLines(lines));
+  }
+
+  String _formatAdError(AdError? error) {
+    if (error == null) {
+      return 'none';
+    }
+
+    return 'code=${error.code}, domain=${error.domain}, '
+        'message=${error.message}';
+  }
+
+  String get _buildModeLabel {
+    if (kReleaseMode) {
+      return 'release';
+    }
+
+    if (kProfileMode) {
+      return 'profile';
+    }
+
+    return 'debug';
+  }
+
+  String get _platformLabel {
+    if (kIsWeb) {
+      return 'web';
+    }
+
+    return defaultTargetPlatform.name;
   }
 
   String? get _adUnitId {
