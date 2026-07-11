@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:jungle_chess/ad_diagnostics_logger.dart';
+import 'package:jungle_chess/mobile_ads_initializer.dart';
 
 class ResetInterstitialAdService {
   ResetInterstitialAdService._();
@@ -39,7 +40,7 @@ class ResetInterstitialAdService {
         'buildMode: $_buildModeLabel',
         'adUnitId: $adUnitId',
       ]);
-      await MobileAds.instance.initialize();
+      await initializeMobileAds();
       _initialized = true;
       _logAdLines([
         'Interstitial SDK initialized',

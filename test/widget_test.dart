@@ -491,6 +491,7 @@ void main() {
         MaterialApp(
           home: JungleChessPage(
             languageCode: _chineseLanguageCode,
+            showUndoRewardedInterstitial: () async => true,
             initialBoard: testBoard(
               red: const BoardPosition(0, 0),
               blue: const BoardPosition(0, 1),
@@ -541,6 +542,50 @@ void main() {
       expect(tester.widget<OutlinedButton>(undoButton).onPressed, isNull);
     },
   );
+
+  testWidgets('does not undo when the rewarded interstitial earns no reward', (
+    tester,
+  ) async {
+    var adRequests = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: JungleChessPage(
+          languageCode: _chineseLanguageCode,
+          showUndoRewardedInterstitial: () async {
+            adRequests += 1;
+            return false;
+          },
+          initialBoard: testBoard(
+            red: const BoardPosition(0, 0),
+            blue: const BoardPosition(0, 1),
+            hiddenBlue: const BoardPosition(1, 0),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('?'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('undo-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '观看广告并悔棋'));
+    await tester.pumpAndSettle();
+
+    expect(adRequests, 1);
+    expect(find.text('?'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('undo-animation-overlay')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.byKey(const ValueKey<String>('undo-button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
 
   testWidgets('starts unassigned and binds player 1 to first red flip', (
     tester,
@@ -735,6 +780,7 @@ void main() {
       MaterialApp(
         home: JungleChessPage(
           languageCode: _chineseLanguageCode,
+          showUndoRewardedInterstitial: () async => true,
           initialBoard: hiddenOpeningBoard(
             first: const GamePiece(side: PieceSide.red, rank: 8),
             second: const GamePiece(side: PieceSide.blue, rank: 2),
@@ -848,6 +894,7 @@ void main() {
       MaterialApp(
         home: JungleChessPage(
           languageCode: _chineseLanguageCode,
+          showUndoRewardedInterstitial: () async => true,
           initialGameMode: GameMode.vsComputer,
           initialAiDifficulty: AiDifficulty.easy,
           initialBoard: hiddenOpeningBoard(
@@ -888,6 +935,7 @@ void main() {
       MaterialApp(
         home: JungleChessPage(
           languageCode: _chineseLanguageCode,
+          showUndoRewardedInterstitial: () async => true,
           initialBoard: testBoard(
             red: const BoardPosition(0, 0),
             blue: const BoardPosition(0, 1),

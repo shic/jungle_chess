@@ -11,10 +11,12 @@ import 'package:jungle_chess/game_audio_service.dart';
 import 'package:jungle_chess/jungle_localizations.dart';
 import 'package:jungle_chess/game_rules.dart';
 import 'package:jungle_chess/reset_interstitial_ad_service.dart';
+import 'package:jungle_chess/undo_rewarded_interstitial_ad_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   unawaited(ResetInterstitialAdService.instance.initialize());
+  unawaited(UndoRewardedInterstitialAdService.instance.initialize());
   runApp(const JungleChessApp());
 }
 
@@ -212,6 +214,7 @@ class JungleChessPage extends StatefulWidget {
     this.initialAiDifficulty = AiDifficulty.normal,
     this.onLanguageChanged,
     this.onUseDeviceLanguage,
+    this.showUndoRewardedInterstitial,
   });
 
   final GameBoard? initialBoard;
@@ -222,6 +225,7 @@ class JungleChessPage extends StatefulWidget {
   final AiDifficulty initialAiDifficulty;
   final ValueChanged<String>? onLanguageChanged;
   final VoidCallback? onUseDeviceLanguage;
+  final Future<bool> Function()? showUndoRewardedInterstitial;
 
   @override
   State<JungleChessPage> createState() => _JungleChessPageState();
@@ -597,14 +601,25 @@ class _JungleChessPageState extends State<JungleChessPage> {
       return;
     }
 
+    final statusBeforeAd = _statusMessage;
     setState(() {
       _undoInProgress = true;
       _selected = null;
       _statusMessage = _StatusMessage((strings) => strings.adThenUndo());
     });
 
-    await ResetInterstitialAdService.instance.showBeforeAction();
+    final rewardEarned =
+        await (widget.showUndoRewardedInterstitial ??
+                UndoRewardedInterstitialAdService.instance.showBeforeUndo)
+            .call();
     if (!mounted) {
+      return;
+    }
+    if (!rewardEarned) {
+      setState(() {
+        _undoInProgress = false;
+        _statusMessage = statusBeforeAd;
+      });
       return;
     }
 
