@@ -168,6 +168,12 @@ class JungleStrings {
     return _lookup('side.${side.name}');
   }
 
+  String capturedPiecesTitle(PieceSide side) {
+    return _format(_lookup('capturedPiecesTitle'), <String, String>{
+      'side': sideLabel(side),
+    });
+  }
+
   String _playerOneLabel() => _lookup('player.one');
 
   String _playerTwoLabel() => _lookup('player.two');
@@ -637,6 +643,7 @@ const Map<String, String> _englishStrings = <String, String>{
       'Play locally against the computer with no server required.',
   'side.red': 'Red',
   'side.blue': 'Blue',
+  'capturedPiecesTitle': '{side} trophies',
   'animal.1': 'Rat',
   'animal.2': 'Cat',
   'animal.3': 'Dog',
@@ -760,6 +767,7 @@ const Map<String, String> _chineseStrings = <String, String>{
   'vsComputerDescription': '和本地电脑算法对战，不需要服务器。',
   'side.red': '红',
   'side.blue': '蓝',
+  'capturedPiecesTitle': '{side}方战利品区',
   'animal.1': '鼠',
   'animal.2': '猫',
   'animal.3': '狗',

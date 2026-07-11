@@ -16,7 +16,7 @@ class ResetInterstitialAdService {
   static const String _iosTestInterstitialAdUnitId =
       'ca-app-pub-3940256099942544/4411468910';
   static const String _iosProductionInterstitialAdUnitId =
-      'ca-app-pub-8928964610230447/1135532974';
+      'ca-app-pub-8928964610230447/8267689592';
 
   static final ResetInterstitialAdService instance =
       ResetInterstitialAdService._();

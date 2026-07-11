@@ -214,7 +214,7 @@ void main() {
     expect(resetButtonRect.right - undoButtonRect.left, greaterThan(250));
   });
 
-  testWidgets('places remaining counters below the board', (tester) async {
+  testWidgets('places captured-piece trays below the board', (tester) async {
     tester.view.physicalSize = const Size(1080, 1920);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -229,17 +229,90 @@ void main() {
         .getBottomLeft(find.byKey(const ValueKey<String>('board-cell-3-0')))
         .dy;
     final countersTop = tester
-        .getTopLeft(find.byKey(const ValueKey<String>('side-counters')))
+        .getTopLeft(find.byKey(const ValueKey<String>('captured-pieces-area')))
         .dy;
 
     expect(countersTop, greaterThan(boardBottom));
     expect(
-      find.byKey(const ValueKey<String>('red-remaining-counter')),
+      find.byKey(const ValueKey<String>('red-captured-pieces')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('blue-remaining-counter')),
+      find.byKey(const ValueKey<String>('blue-captured-pieces')),
       findsOneWidget,
+    );
+    expect(find.text('红方战利品区'), findsOneWidget);
+    expect(find.text('蓝方战利品区'), findsOneWidget);
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey<String>('red-captured-pieces-indicator')),
+          )
+          .height,
+      36,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey<String>('blue-captured-pieces-indicator'),
+            ),
+          )
+          .height,
+      36,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('red-remaining-counter')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('blue-remaining-counter')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('colors the board frame and shadow for the current side', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: JungleChessPage(
+          languageCode: _chineseLanguageCode,
+          initialBoard: testBoard(
+            red: const BoardPosition(0, 0),
+            blue: const BoardPosition(0, 1),
+            hiddenBlue: const BoardPosition(3, 3),
+          ),
+        ),
+      ),
+    );
+
+    BoxDecoration boardDecoration() {
+      return tester
+              .widget<AnimatedContainer>(
+                find.byKey(const ValueKey<String>('turn-board-frame')),
+              )
+              .decoration
+          as BoxDecoration;
+    }
+
+    const red = Color(0xFFC44536);
+    const blue = Color(0xFF1E6FBA);
+    expect(boardDecoration().border!.top.color, red);
+    expect(
+      boardDecoration().boxShadow!.first.color,
+      red.withValues(alpha: 0.38),
+    );
+
+    await tester.tap(find.text('8'));
+    await tester.pump();
+    await tester.tap(find.text('2'));
+    await tester.pumpAndSettle();
+
+    expect(boardDecoration().border!.top.color, blue);
+    expect(
+      boardDecoration().boxShadow!.first.color,
+      blue.withValues(alpha: 0.38),
     );
   });
 
@@ -829,6 +902,37 @@ void main() {
     await tester.tap(find.text('8'));
     await tester.pump();
     await tester.tap(find.text('2'));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final captureDestinationCell = find.byKey(
+      const ValueKey<String>('board-cell-0-1'),
+    );
+    final captureDestinationBackground = tester.widget<AnimatedContainer>(
+      find.descendant(
+        of: captureDestinationCell,
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    expect(
+      (captureDestinationBackground.decoration as BoxDecoration).color,
+      const Color(0xFFD95D4F),
+    );
+    expect(
+      find.descendant(of: captureDestinationCell, matching: find.text('8')),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey<String>('captured-piece-flight-blue-2')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('red-captured-blue-2-0')),
+      findsOneWidget,
+    );
+
     await tester.pumpAndSettle();
     await tester.tap(find.text('?'));
     await tester.pumpAndSettle();
@@ -840,12 +944,20 @@ void main() {
 
     expect(find.text('?'), findsOneWidget);
     expect(_currentTurnText('当前回合：玩家2（蓝方）'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('red-captured-blue-2-0')),
+      findsOneWidget,
+    );
     expect(tester.widget<OutlinedButton>(undoButton).onPressed, isNotNull);
 
     await _confirmUndo(tester);
 
     expect(find.text('?'), findsOneWidget);
     expect(_currentTurnText('当前回合：玩家1（红方）'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('red-captured-blue-2-0')),
+      findsNothing,
+    );
     expect(tester.widget<OutlinedButton>(undoButton).onPressed, isNull);
   });
 

@@ -126,6 +126,7 @@ enum _MoveDirection { up, down, left, right }
 enum GameMode { localTwoPlayer, vsComputer }
 
 const double _boardGap = 10;
+const double _capturedPieceTokenSize = 36;
 const String _deviceLanguageDropdownValue = 'device-language';
 
 class _GameSnapshot {
@@ -138,6 +139,8 @@ class _GameSnapshot {
     required this.isDraw,
     required this.turnsWithoutCapture,
     required this.recentAiActions,
+    required this.capturedByRed,
+    required this.capturedByBlue,
   });
 
   final GameBoard board;
@@ -148,6 +151,8 @@ class _GameSnapshot {
   final bool isDraw;
   final int turnsWithoutCapture;
   final List<GameAction> recentAiActions;
+  final List<GamePiece> capturedByRed;
+  final List<GamePiece> capturedByBlue;
 }
 
 class _StatusMessage {
@@ -230,6 +235,22 @@ class _JungleChessPageState extends State<JungleChessPage> {
   final Random _random = Random();
   final List<_GameSnapshot> _moveHistory = <_GameSnapshot>[];
   final List<GameAction> _recentAiActions = <GameAction>[];
+  final Map<PieceSide, List<GamePiece>> _capturedBySide =
+      <PieceSide, List<GamePiece>>{
+        PieceSide.red: <GamePiece>[],
+        PieceSide.blue: <GamePiece>[],
+      };
+  final Map<PieceSide, GlobalKey> _captureTargetKeys = <PieceSide, GlobalKey>{
+    PieceSide.red: GlobalKey(debugLabel: 'red-capture-target'),
+    PieceSide.blue: GlobalKey(debugLabel: 'blue-capture-target'),
+  };
+  final List<List<GlobalKey>> _boardCellKeys = List<List<GlobalKey>>.generate(
+    boardSize,
+    (row) => List<GlobalKey>.generate(
+      boardSize,
+      (col) => GlobalKey(debugLabel: 'board-cell-anchor-$row-$col'),
+    ),
+  );
   late List<List<GamePiece?>> _board;
   PieceSide _currentTurn = PieceSide.red;
   PieceSide? _playerOneSide;
@@ -246,6 +267,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
   bool _undoInProgress = false;
   bool _showUndoAnimation = false;
   bool _aiThinking = false;
+  int _captureFlightsInProgress = 0;
+  int _moveFlightsInProgress = 0;
+  BoardPosition? _movingPieceDestination;
   int _turnsWithoutCapture = 0;
   int _aiTurnToken = 0;
   Timer? _firstFlipToastTimer;
@@ -280,6 +304,8 @@ class _JungleChessPageState extends State<JungleChessPage> {
       setState(() {
         _moveHistory.clear();
         _recentAiActions.clear();
+        _capturedBySide[PieceSide.red]!.clear();
+        _capturedBySide[PieceSide.blue]!.clear();
         _currentTurn = initialTurn;
         _playerOneSide = playerOneSide;
         _firstFlipToastSide = null;
@@ -289,6 +315,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
         _undoInProgress = false;
         _showUndoAnimation = false;
         _aiThinking = false;
+        _captureFlightsInProgress = 0;
+        _moveFlightsInProgress = 0;
+        _movingPieceDestination = null;
         _turnsWithoutCapture = 0;
         _statusMessage = playerOneSide == null
             ? _StatusMessage((strings) => strings.openingTurn())
@@ -322,6 +351,8 @@ class _JungleChessPageState extends State<JungleChessPage> {
     setState(() {
       _moveHistory.clear();
       _recentAiActions.clear();
+      _capturedBySide[PieceSide.red]!.clear();
+      _capturedBySide[PieceSide.blue]!.clear();
       _currentTurn = PieceSide.red;
       _playerOneSide = null;
       _firstFlipToastSide = null;
@@ -331,6 +362,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
       _undoInProgress = false;
       _showUndoAnimation = false;
       _aiThinking = false;
+      _captureFlightsInProgress = 0;
+      _moveFlightsInProgress = 0;
+      _movingPieceDestination = null;
       _turnsWithoutCapture = 0;
       _statusMessage = _StatusMessage((strings) => strings.openingTurn());
     });
@@ -374,7 +408,12 @@ class _JungleChessPageState extends State<JungleChessPage> {
         !_isDraw;
   }
 
-  bool get _blocksHumanInput => _undoInProgress || _aiThinking || _isAiTurn;
+  bool get _blocksHumanInput =>
+      _undoInProgress ||
+      _aiThinking ||
+      _isAiTurn ||
+      _captureFlightsInProgress > 0 ||
+      _moveFlightsInProgress > 0;
 
   void _cancelAiTurn() {
     _aiTurnToken++;
@@ -486,6 +525,8 @@ class _JungleChessPageState extends State<JungleChessPage> {
     setState(() {
       _moveHistory.clear();
       _recentAiActions.clear();
+      _capturedBySide[PieceSide.red]!.clear();
+      _capturedBySide[PieceSide.blue]!.clear();
       _currentTurn = PieceSide.red;
       _playerOneSide = null;
       _firstFlipToastSide = null;
@@ -495,6 +536,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
       _undoInProgress = false;
       _showUndoAnimation = false;
       _aiThinking = false;
+      _captureFlightsInProgress = 0;
+      _moveFlightsInProgress = 0;
+      _movingPieceDestination = null;
       _turnsWithoutCapture = 0;
       _modeSelected = false;
       _choosingComputerDifficulty = false;
@@ -597,6 +641,12 @@ class _JungleChessPageState extends State<JungleChessPage> {
         isDraw: _isDraw,
         turnsWithoutCapture: _turnsWithoutCapture,
         recentAiActions: List<GameAction>.unmodifiable(_recentAiActions),
+        capturedByRed: List<GamePiece>.unmodifiable(
+          _capturedBySide[PieceSide.red]!,
+        ),
+        capturedByBlue: List<GamePiece>.unmodifiable(
+          _capturedBySide[PieceSide.blue]!,
+        ),
       ),
     );
   }
@@ -623,6 +673,12 @@ class _JungleChessPageState extends State<JungleChessPage> {
       _recentAiActions
         ..clear()
         ..addAll(snapshot.recentAiActions);
+      _capturedBySide[PieceSide.red]!
+        ..clear()
+        ..addAll(snapshot.capturedByRed);
+      _capturedBySide[PieceSide.blue]!
+        ..clear()
+        ..addAll(snapshot.capturedByBlue);
       _currentTurn = snapshot.currentTurn;
       _playerOneSide = snapshot.playerOneSide;
       _firstFlipToastSide = null;
@@ -632,6 +688,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
       _turnsWithoutCapture = snapshot.turnsWithoutCapture;
       _undoInProgress = false;
       _showUndoAnimation = false;
+      _captureFlightsInProgress = 0;
+      _moveFlightsInProgress = 0;
+      _movingPieceDestination = null;
       _statusMessage = _undoStatusMessage(snapshot);
     });
   }
@@ -890,7 +949,11 @@ class _JungleChessPageState extends State<JungleChessPage> {
   }
 
   void _scheduleAiTurnIfNeeded() {
-    if (!_isAiTurn || _aiThinking || _undoInProgress) {
+    if (!_isAiTurn ||
+        _aiThinking ||
+        _undoInProgress ||
+        _captureFlightsInProgress > 0 ||
+        _moveFlightsInProgress > 0) {
       return;
     }
 
@@ -1122,9 +1185,11 @@ class _JungleChessPageState extends State<JungleChessPage> {
       final playerOneSide = _playerOneSide;
       _playSound(GameSoundEffect.move);
       _saveUndoSnapshot();
+      _launchMoveFlight(piece: attacker, from: from, to: to);
       setState(() {
         _board[to.row][to.col] = attacker;
         _board[from.row][from.col] = null;
+        _movingPieceDestination = to;
         _selected = null;
         _statusMessage = _StatusMessage(
           (strings) => strings.movedToEmpty(
@@ -1172,6 +1237,14 @@ class _JungleChessPageState extends State<JungleChessPage> {
     final defenderSide = defender.side;
     _playSound(GameSoundEffect.capture);
     _saveUndoSnapshot();
+    _launchCaptureFlight(piece: defender, from: to, capturedBy: attacker.side);
+    if (isMutualElimination) {
+      _launchCaptureFlight(
+        piece: attacker,
+        from: from,
+        capturedBy: defender.side,
+      );
+    }
     final actionMessage = isMutualElimination
         ? _StatusMessage(
             (strings) => strings.mutualElimination(
@@ -1194,12 +1267,122 @@ class _JungleChessPageState extends State<JungleChessPage> {
             ),
           );
     setState(() {
+      _capturedBySide[attacker.side]!.add(defender);
+      if (isMutualElimination) {
+        _capturedBySide[defender.side]!.add(attacker);
+      }
       _board[from.row][from.col] = null;
       _board[to.row][to.col] = isMutualElimination ? null : attacker;
+      _movingPieceDestination = null;
       _selected = null;
       _statusMessage = actionMessage;
     });
     _finishTurn(captured: true, actionMessage: actionMessage);
+  }
+
+  void _launchCaptureFlight({
+    required GamePiece piece,
+    required BoardPosition from,
+    required PieceSide capturedBy,
+  }) {
+    final sourceBox =
+        _boardCellKeys[from.row][from.col].currentContext?.findRenderObject()
+            as RenderBox?;
+    final targetBox =
+        _captureTargetKeys[capturedBy]?.currentContext?.findRenderObject()
+            as RenderBox?;
+    final overlay = Overlay.of(context);
+    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    if (sourceBox == null || targetBox == null || overlayBox == null) {
+      return;
+    }
+
+    const tokenSize = 52.0;
+    final sourceCenter = overlayBox.globalToLocal(
+      sourceBox.localToGlobal(sourceBox.size.center(Offset.zero)),
+    );
+    final targetCenter = overlayBox.globalToLocal(
+      targetBox.localToGlobal(targetBox.size.center(Offset.zero)),
+    );
+    _captureFlightsInProgress++;
+
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (context) => _FlyingCapturedPiece(
+        piece: piece,
+        strings: _strings,
+        start: sourceCenter - const Offset(tokenSize / 2, tokenSize / 2),
+        end: targetCenter - const Offset(tokenSize / 2, tokenSize / 2),
+        size: tokenSize,
+        onCompleted: () {
+          entry.remove();
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _captureFlightsInProgress = max(0, _captureFlightsInProgress - 1);
+          });
+          if (_captureFlightsInProgress == 0) {
+            _queueAiTurnCheck();
+          }
+        },
+      ),
+    );
+    overlay.insert(entry);
+  }
+
+  void _launchMoveFlight({
+    required GamePiece piece,
+    required BoardPosition from,
+    required BoardPosition to,
+  }) {
+    final sourceBox =
+        _boardCellKeys[from.row][from.col].currentContext?.findRenderObject()
+            as RenderBox?;
+    final targetBox =
+        _boardCellKeys[to.row][to.col].currentContext?.findRenderObject()
+            as RenderBox?;
+    final overlay = Overlay.of(context);
+    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    if (sourceBox == null || targetBox == null || overlayBox == null) {
+      return;
+    }
+
+    final size = min(sourceBox.size.width, sourceBox.size.height) * 0.72;
+    final startCenter = overlayBox.globalToLocal(
+      sourceBox.localToGlobal(sourceBox.size.center(Offset.zero)),
+    );
+    final endCenter = overlayBox.globalToLocal(
+      targetBox.localToGlobal(targetBox.size.center(Offset.zero)),
+    );
+    _moveFlightsInProgress++;
+
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (context) => _FlyingMovedPiece(
+        piece: piece,
+        strings: _strings,
+        start: startCenter - Offset(size / 2, size / 2),
+        end: endCenter - Offset(size / 2, size / 2),
+        size: size,
+        onCompleted: () {
+          entry.remove();
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _moveFlightsInProgress = max(0, _moveFlightsInProgress - 1);
+            if (_moveFlightsInProgress == 0) {
+              _movingPieceDestination = null;
+            }
+          });
+          if (_moveFlightsInProgress == 0) {
+            _queueAiTurnCheck();
+          }
+        },
+      ),
+    );
+    overlay.insert(entry);
   }
 
   bool _canCapture({required GamePiece attacker, required GamePiece defender}) {
@@ -1436,7 +1619,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
                     const SizedBox(height: 16),
                     _buildBoard(strings),
                     const SizedBox(height: 12),
-                    _buildSideCounters(),
+                    _buildCapturedPiecesArea(),
                     const SizedBox(height: 16),
                     _buildRulesCard(strings),
                   ],
@@ -1976,54 +2159,80 @@ class _JungleChessPageState extends State<JungleChessPage> {
     );
   }
 
-  Widget _buildSideCounters() {
+  Widget _buildCapturedPiecesArea() {
     return Row(
-      key: const ValueKey<String>('side-counters'),
+      key: const ValueKey<String>('captured-pieces-area'),
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: _buildSideCounter(
-            side: PieceSide.red,
-            count: _remainingCount(PieceSide.red),
-          ),
-        ),
+        Expanded(child: _buildCapturedPiecesTray(capturer: PieceSide.red)),
         const SizedBox(width: 12),
-        Expanded(
-          child: _buildSideCounter(
-            side: PieceSide.blue,
-            count: _remainingCount(PieceSide.blue),
-          ),
-        ),
+        Expanded(child: _buildCapturedPiecesTray(capturer: PieceSide.blue)),
       ],
     );
   }
 
-  Widget _buildSideCounter({required PieceSide side, required int count}) {
-    final strings = _strings;
-    final color = side == PieceSide.red
+  Widget _buildCapturedPiecesTray({required PieceSide capturer}) {
+    final color = capturer == PieceSide.red
         ? const Color(0xFFC44536)
         : const Color(0xFF1E6FBA);
+    final capturedPieces = _capturedBySide[capturer]!;
 
     return Container(
-      key: ValueKey<String>('${side.name}-remaining-counter'),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      key: _captureTargetKeys[capturer],
+      constraints: const BoxConstraints(minHeight: 94),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(18),
+        color: color.withValues(alpha: 0.12),
+        border: Border.all(color: color.withValues(alpha: 0.42), width: 2),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            strings.sideRemaining(
-              side,
-              _playerOneSide,
-              computerOpponent: _isVsComputer,
+            _strings.capturedPiecesTitle(capturer),
+            key: ValueKey<String>('${capturer.name}-captured-pieces-title'),
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
             ),
-            style: TextStyle(color: color, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
-          Text(
-            strings.piecesCount(count),
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                key: ValueKey<String>(
+                  '${capturer.name}-captured-pieces-indicator',
+                ),
+                width: 7,
+                height: _capturedPieceTokenSize,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Wrap(
+                  key: ValueKey<String>('${capturer.name}-captured-pieces'),
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    for (var index = 0; index < capturedPieces.length; index++)
+                      _CapturedPieceToken(
+                        key: ValueKey<String>(
+                          '${capturer.name}-captured-${capturedPieces[index].side.name}-${capturedPieces[index].rank}-$index',
+                        ),
+                        piece: capturedPieces[index],
+                        strings: _strings,
+                        size: _capturedPieceTokenSize,
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -2031,10 +2240,19 @@ class _JungleChessPageState extends State<JungleChessPage> {
   }
 
   Widget _buildBoard(JungleStrings strings) {
+    final hasActiveTurn = _playerOneSide != null && _winner == null && !_isDraw;
+    final turnColor = _currentTurn == PieceSide.red
+        ? const Color(0xFFC44536)
+        : const Color(0xFF1E6FBA);
+    final frameColor = hasActiveTurn ? turnColor : Colors.transparent;
+
     return AspectRatio(
       aspectRatio: 1,
-      child: Container(
-        padding: const EdgeInsets.all(14),
+      child: AnimatedContainer(
+        key: const ValueKey<String>('turn-board-frame'),
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             colors: [Color(0xFFD8B27A), Color(0xFFB17A4B)],
@@ -2042,8 +2260,16 @@ class _JungleChessPageState extends State<JungleChessPage> {
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(28),
-          boxShadow: const [
-            BoxShadow(
+          border: Border.all(color: frameColor, width: 4),
+          boxShadow: [
+            if (hasActiveTurn)
+              BoxShadow(
+                color: turnColor.withValues(alpha: 0.38),
+                blurRadius: 24,
+                spreadRadius: 3,
+                offset: const Offset(0, 5),
+              ),
+            const BoxShadow(
               color: Colors.black12,
               blurRadius: 18,
               offset: Offset(0, 8),
@@ -2067,7 +2293,9 @@ class _JungleChessPageState extends State<JungleChessPage> {
                 final piece = _board[row][col];
                 return _BoardCell(
                   key: ValueKey<String>('board-cell-$row-$col'),
+                  anchorKey: _boardCellKeys[row][col],
                   piece: piece,
+                  hidePiece: _movingPieceDestination == position,
                   strings: strings,
                   highlighted: _isHighlighted(position),
                   onTap: () => _onCellTapped(position),
@@ -2289,13 +2517,17 @@ class _JungleChessPageState extends State<JungleChessPage> {
 class _BoardCell extends StatelessWidget {
   const _BoardCell({
     super.key,
+    required this.anchorKey,
     required this.piece,
+    required this.hidePiece,
     required this.strings,
     required this.highlighted,
     required this.onTap,
   });
 
+  final Key anchorKey;
   final GamePiece? piece;
+  final bool hidePiece;
   final JungleStrings strings;
   final bool highlighted;
   final VoidCallback onTap;
@@ -2306,28 +2538,34 @@ class _BoardCell extends StatelessWidget {
         ? const Color(0xFFFFD166)
         : Colors.white.withValues(alpha: 0.6);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          decoration: BoxDecoration(
-            color: _backgroundColor(),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: borderColor,
-              width: highlighted ? 3 : 1.5,
+    return SizedBox.expand(
+      key: anchorKey,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            decoration: BoxDecoration(
+              color: _backgroundColor(),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: borderColor,
+                width: highlighted ? 3 : 1.5,
+              ),
             ),
+            child: _buildCellContent(),
           ),
-          child: _buildCellContent(),
         ),
       ),
     );
   }
 
   Widget _buildCellContent() {
+    if (hidePiece) {
+      return const SizedBox.expand();
+    }
     final cellPiece = piece;
     if (cellPiece == null) {
       return const SizedBox.expand();
@@ -2348,7 +2586,7 @@ class _BoardCell extends StatelessWidget {
   }
 
   Color _backgroundColor() {
-    if (piece == null) {
+    if (hidePiece || piece == null) {
       return const Color(0xFF7A593F);
     }
     if (!piece!.revealed) {
@@ -2499,6 +2737,177 @@ class _MoveArrowPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MoveArrowPainter oldDelegate) {
     return oldDelegate.direction != direction || oldDelegate.color != color;
+  }
+}
+
+class _FlyingMovedPiece extends StatelessWidget {
+  const _FlyingMovedPiece({
+    required this.piece,
+    required this.strings,
+    required this.start,
+    required this.end,
+    required this.size,
+    required this.onCompleted,
+  });
+
+  final GamePiece piece;
+  final JungleStrings strings;
+  final Offset start;
+  final Offset end;
+  final double size;
+  final VoidCallback onCompleted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: TweenAnimationBuilder<double>(
+          key: ValueKey<String>(
+            'moving-piece-flight-${piece.side.name}-${piece.rank}',
+          ),
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeInOutCubic,
+          onEnd: onCompleted,
+          builder: (context, value, child) {
+            final position = Offset.lerp(start, end, value)!;
+            final arc = sin(pi * value) * 18;
+            return Stack(
+              children: [
+                Positioned(
+                  left: position.dx,
+                  top: position.dy - arc,
+                  width: size,
+                  height: size,
+                  child: Transform.rotate(
+                    angle: sin(pi * value) * 0.16,
+                    child: Transform.scale(
+                      scale: 1 + sin(pi * value) * 0.1,
+                      child: child,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+          child: _CapturedPieceToken(
+            piece: piece,
+            strings: strings,
+            size: size,
+            elevated: true,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FlyingCapturedPiece extends StatelessWidget {
+  const _FlyingCapturedPiece({
+    required this.piece,
+    required this.strings,
+    required this.start,
+    required this.end,
+    required this.size,
+    required this.onCompleted,
+  });
+
+  final GamePiece piece;
+  final JungleStrings strings;
+  final Offset start;
+  final Offset end;
+  final double size;
+  final VoidCallback onCompleted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: TweenAnimationBuilder<double>(
+          key: ValueKey<String>(
+            'captured-piece-flight-${piece.side.name}-${piece.rank}',
+          ),
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 700),
+          curve: Curves.linear,
+          onEnd: onCompleted,
+          builder: (context, value, child) {
+            final progress = Curves.easeInOutCubic.transform(value);
+            final position = Offset.lerp(start, end, progress)!;
+            final arc = sin(pi * progress) * 72;
+            return Stack(
+              children: [
+                Positioned(
+                  left: position.dx,
+                  top: position.dy - arc,
+                  width: size,
+                  height: size,
+                  child: Transform.rotate(
+                    angle: sin(pi * progress) * 0.32,
+                    child: Transform.scale(
+                      scale: 1 + sin(pi * progress) * 0.18,
+                      child: child,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+          child: _CapturedPieceToken(
+            piece: piece,
+            strings: strings,
+            size: size,
+            elevated: true,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CapturedPieceToken extends StatelessWidget {
+  const _CapturedPieceToken({
+    super.key,
+    required this.piece,
+    required this.strings,
+    required this.size,
+    this.elevated = false,
+  });
+
+  final GamePiece piece;
+  final JungleStrings strings;
+  final double size;
+  final bool elevated;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = piece.side == PieceSide.red
+        ? const Color(0xFFD95D4F)
+        : const Color(0xFF347FC4);
+    return Semantics(
+      label: '${strings.animalName(piece.rank)} ${piece.rank}',
+      image: true,
+      child: Container(
+        width: size,
+        height: size,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(size * 0.22),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
+          boxShadow: elevated
+              ? const [
+                  BoxShadow(
+                    color: Colors.black38,
+                    blurRadius: 14,
+                    offset: Offset(0, 7),
+                  ),
+                ]
+              : null,
+        ),
+        child: _RevealedPiece(piece: piece, strings: strings),
+      ),
+    );
   }
 }
 
