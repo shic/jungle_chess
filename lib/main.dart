@@ -1600,7 +1600,13 @@ class _JungleChessPageState extends State<JungleChessPage> {
                     : _onBackToModeSelectionPressed,
               )
             : null,
-        title: Text(strings.appTitle),
+        title: _modeSelected
+            ? _buildGameHeaderTitle(strings)
+            : Text(
+                strings.appTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
         centerTitle: true,
         actions: [
           IconButton(
@@ -1623,7 +1629,7 @@ class _JungleChessPageState extends State<JungleChessPage> {
       child: Stack(
         children: [
           SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),
@@ -1645,6 +1651,57 @@ class _JungleChessPageState extends State<JungleChessPage> {
           if (_firstFlipToastSide != null) _buildFirstFlipToast(),
         ],
       ),
+    );
+  }
+
+  Widget _buildGameHeaderTitle(JungleStrings strings) {
+    final turnColor = _playerOneSide == null
+        ? const Color(0xFF7A593F)
+        : _currentTurn == PieceSide.red
+        ? const Color(0xFFC44536)
+        : const Color(0xFF1E6FBA);
+    final isCurrentTurnHeading =
+        _winner == null && !_isDraw && _playerOneSide != null;
+    final heading = _winner != null
+        ? strings.victoryHeading(
+            _winner!,
+            _playerOneSide,
+            computerOpponent: _isVsComputer,
+          )
+        : _isDraw
+        ? strings.drawHeading
+        : strings.openingHeading;
+    const style = TextStyle(fontWeight: FontWeight.w700);
+
+    if (!isCurrentTurnHeading) {
+      return Text(
+        heading,
+        key: const ValueKey<String>('game-header-title'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+
+    return Text.rich(
+      TextSpan(
+        style: style,
+        children: [
+          TextSpan(text: strings.currentTurnPrefix()),
+          TextSpan(
+            text: strings.currentTurnSide(
+              _currentTurn,
+              _playerOneSide,
+              computerOpponent: _isVsComputer,
+            ),
+            style: TextStyle(color: turnColor),
+          ),
+          TextSpan(text: strings.currentTurnSuffix()),
+        ],
+      ),
+      key: const ValueKey<String>('current-turn-heading'),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -2037,94 +2094,18 @@ class _JungleChessPageState extends State<JungleChessPage> {
 
   Widget _buildStatusCard() {
     final strings = _strings;
-    final turnColor = _playerOneSide == null
-        ? const Color(0xFF7A593F)
-        : _currentTurn == PieceSide.red
-        ? const Color(0xFFC44536)
-        : const Color(0xFF1E6FBA);
     final statusLineHeight = MediaQuery.textScalerOf(context).scale(16) * 1.5;
-    final isCurrentTurnHeading =
-        _winner == null && !_isDraw && _playerOneSide != null;
-    final heading = _winner != null
-        ? strings.victoryHeading(
-            _winner!,
-            _playerOneSide,
-            computerOpponent: _isVsComputer,
-          )
-        : _isDraw
-        ? strings.drawHeading
-        : strings.openingHeading;
-    const headingStyle = TextStyle(
-      fontSize: 22,
-      height: 1.2,
-      fontWeight: FontWeight.w700,
-    );
-    final headingLineHeight = MediaQuery.textScalerOf(context).scale(22 * 1.2);
 
     return Card(
+      key: const ValueKey<String>('status-card'),
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  height: headingLineHeight * 2,
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: _winner != null || _isDraw
-                              ? Colors.grey
-                              : turnColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: isCurrentTurnHeading
-                            ? Text.rich(
-                                TextSpan(
-                                  style: headingStyle,
-                                  children: [
-                                    TextSpan(text: strings.currentTurnPrefix()),
-                                    TextSpan(
-                                      text: strings.currentTurnSide(
-                                        _currentTurn,
-                                        _playerOneSide,
-                                        computerOpponent: _isVsComputer,
-                                      ),
-                                      style: TextStyle(color: turnColor),
-                                    ),
-                                    TextSpan(text: strings.currentTurnSuffix()),
-                                  ],
-                                ),
-                                key: const ValueKey<String>(
-                                  'current-turn-heading',
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              )
-                            : Text(
-                                heading,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: headingStyle,
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _buildStatusActions(strings),
-              ],
-            ),
+            _buildStatusActions(strings),
             const SizedBox(height: 16),
             SizedBox(
               height: statusLineHeight * 3,

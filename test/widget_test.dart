@@ -124,7 +124,8 @@ void main() {
     );
     await _startLocalTwoPlayerGame(tester);
 
-    expect(find.text('Animal Kings'), findsOneWidget);
+    expect(find.text('玩家1先翻棋'), findsOneWidget);
+    expect(find.text('Animal Kings'), findsNothing);
     expect(find.text('重新开始'), findsOneWidget);
     expect(find.text('规则说明'), findsOneWidget);
   });
@@ -194,9 +195,12 @@ void main() {
     );
     await _startLocalTwoPlayerGame(tester);
 
-    final heading = find.text('玩家1先翻棋');
+    final heading = find.byKey(const ValueKey<String>('game-header-title'));
     expect(heading, findsOneWidget);
-    expect(tester.getSize(heading).height, lessThan(70));
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: heading),
+      findsOneWidget,
+    );
     expect(find.text('悔棋'), findsOneWidget);
     expect(find.text('重新开始'), findsOneWidget);
 
@@ -212,6 +216,34 @@ void main() {
     );
     expect(undoButtonRect.left, lessThan(resetButtonRect.left));
     expect(resetButtonRect.right - undoButtonRect.left, greaterThan(250));
+  });
+
+  testWidgets('keeps the status card tight against the game header', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const JungleChessApp(initialLanguageCode: _chineseLanguageCode),
+    );
+    await _startLocalTwoPlayerGame(tester);
+
+    final appBarBottom = tester.getBottomLeft(find.byType(AppBar)).dy;
+    final statusCardTop = tester
+        .getTopLeft(find.byKey(const ValueKey<String>('status-card')))
+        .dy;
+
+    expect(statusCardTop, moreOrLessEquals(appBarBottom, epsilon: 1));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('status-card')),
+        matching: find.text('玩家1先翻棋'),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('places captured-piece trays below the board', (tester) async {
