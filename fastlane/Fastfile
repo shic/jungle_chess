@@ -6,7 +6,7 @@ platform :ios do
     options = {
       app_identifier: "com.epicagruppo.jungle",
       app: 6781449051,
-      app_version: "1.0.3",
+      app_version: "1.0.4",
       platform: "ios",
       team_name: "Epica S.R.L.",
       dev_portal_team_id: "YA8NKL23YA",
